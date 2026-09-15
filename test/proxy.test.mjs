@@ -279,13 +279,13 @@ test('Tailscale 地址识别（100.64.0.0/10）', () => {
   for (const ip of no) assert.equal(isTailscaleAddress(ip), false, `${ip} 不应判为 Tailscale`);
 });
 
-test('端点响应体：区分「代理在跑」和「代理没跑」', () => {
+test('端点响应体：区分「代理在跑」和「代理没跑」', async () => {
   const nets = [
     { name: 'en0', address: '192.168.0.21' },
     { name: 'utun3', address: '100.100.190.107' },
   ];
 
-  const up = buildInfoPayload({ port: 3081, upstreamPort: 3080 }, nets);
+  const up = await buildInfoPayload({ port: 3081, upstreamPort: 3080 }, nets);
   assert.equal(up.listening, true);
   assert.equal(up.port, 3081);
   assert.equal(up.upstreamPort, 3080);
@@ -297,9 +297,14 @@ test('端点响应体：区分「代理在跑」和「代理没跑」', () => {
   for (const url of up.tailscale) assert.ok(up.addresses.includes(url), '且是 addresses 的子集');
 
   // 代理没在跑时必须说清楚 —— 前端据此区分「没起来」和「读不到端点」
-  const down = buildInfoPayload({ port: null, upstreamPort: 3080 }, nets);
+  const down = await buildInfoPayload({ port: null, upstreamPort: 3080 }, nets);
   assert.equal(down.listening, false);
   assert.equal(down.port, null);
   assert.deepEqual(down.addresses, [], '没监听就不该报地址');
   assert.deepEqual(down.tailscale, []);
+
+  // 二维码：地址对应的 SVG，前端拿它渲染扫码。没在监听就不该有。
+  assert.ok(up.qrcodes['http://192.168.0.21:3081'].startsWith('<svg'), '监听中应有二维码 SVG');
+  assert.ok(up.qrcodes['http://192.168.0.21:3081'].includes('crispEdges'), '是二维码（不是普通图形）');
+  assert.deepEqual(Object.keys(down.qrcodes), [], '没监听就不该生成二维码');
 });
