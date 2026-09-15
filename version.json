@@ -2,5 +2,5 @@
   "version": "4.0.6",
   "apk": "https://cdn.jsdelivr.net/gh/xiazhi88/dshgo@dist-v4.0.6/dshgo-app.apk",
   "apkFallback": "https://github.com/xiazhi88/dshgo/releases/latest/download/dshgo-app.apk",
-  "notes": "小组件重做：品牌蓝+白+官方鲸鱼；修语音识别被误判为不存在（Android 11 包可见性）"
+  "notes": "\u5c0f\u7ec4\u4ef6\u91cd\u505a\uff1a\u84dd\u767d+\u5b98\u65b9\u9cb8\u9c7c\uff1b\u4fee\u8bed\u97f3\u8bc6\u522b\u8bef\u5224"
 }
