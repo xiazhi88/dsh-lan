@@ -1,5 +1,6 @@
 package com.dshgo.app.notify
 
+import kotlinx.coroutines.withTimeoutOrNull
 import android.content.Context
 import com.dshgo.app.data.DshApi
 import kotlinx.coroutines.CoroutineScope
@@ -55,6 +56,18 @@ object SessionWatcher {
     val live: StateFlow<Boolean> = _live.asStateFlow()
 
     /** 进程级作用域：不跟 Activity 生命周期绑定，否则界面一销毁事件流就断。 */
+    /** WS 连续失败几次就退到轮询。1 次可能是网络抖动，2 次基本可以判定不支持。 */
+    private const val WS_FAILURES_BEFORE_POLL = 2
+
+    /** 轮询间隔。通知不比聊天，3 秒的延迟完全可接受。 */
+    private const val POLL_MS = 3000L
+
+    /** 轮询模式下每这么多次回头试一次 WS（× POLL_MS ≈ 1 分钟）。 */
+    private const val WS_RETRY_EVERY = 20
+
+    /** 单次 WS 连接的最长等待，超时也算失败。 */
+    private const val OPEN_TIMEOUT_MS = 20000L
+
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private var api: DshApi? = null
@@ -81,6 +94,19 @@ object SessionWatcher {
     private val _lastEventAt = MutableStateFlow(0L)
     val lastEventAt: StateFlow<Long> = _lastEventAt.asStateFlow()
 
+    /**
+     * 现在靠什么获知会话状态。
+     *
+     * DSH 的 WebSocket 事件流（`/api/remote.mux`）是 **0.1.2 之后**才有的；
+     * 0.1.1 那一代根本没注册这个升级路由，WS 握手会被直接掐断。
+     * 而 `session/list` 是各版本都有的普通 HTTP 接口 —— 所以 WS 连不上时
+     * 退到轮询它，老版本也能收到通知。
+     */
+    private val _mode = MutableStateFlow(Mode.Stream)
+    val mode: StateFlow<Mode> = _mode.asStateFlow()
+
+    enum class Mode { Stream, Poll, Down }
+
     @Synchronized
     fun start(context: Context, baseUrl: String) {
         if (loop?.isActive == true) return
@@ -102,12 +128,32 @@ object SessionWatcher {
                 }
             }
 
+            var wsFailures = 0
+            var pollTicks = 0
+
             while (isActive) {
+                // ── 轮询模式 ──
+                // 上游是 0.1.1 那一代时没有 WS 路由，硬连只会不停被掐断。
+                // 退到轮询 session/list —— 这个接口各版本都有。
+                if (wsFailures >= WS_FAILURES_BEFORE_POLL) {
+                    _mode.value = Mode.Poll
+                    pollTick(client)
+                    pollTicks++
+                    // 每 POLL_MS × WS_RETRY_EVERY ≈ 1 分钟再试一次 WS：
+                    // 上游升级之后能自动切回实时流。
+                    if (pollTicks % WS_RETRY_EVERY != 0) {
+                        delay(POLL_MS)
+                        continue
+                    }
+                    wsFailures = 0
+                }
+
                 val done = kotlinx.coroutines.CompletableDeferred<Unit>()
                 stream = client.openEvents(object : DshApi.EventSink {
                     override fun onReady() {
                         _live.value = true
                         _lastError.value = null
+                        _mode.value = Mode.Stream
                     }
 
                     override fun onEmit(event: String, args: JSONArray) {
@@ -125,9 +171,11 @@ object SessionWatcher {
                         done.complete(Unit)
                     }
                 })
-                done.await()
+                val opened = withTimeoutOrNull(OPEN_TIMEOUT_MS) { done.await() } != null
                 runCatching { stream?.close() }
                 stream = null
+                // 连上过又断了 → 计入失败；一直连不上更要计
+                wsFailures++
                 if (isActive) delay(RECONNECT_MS)
             }
         }
@@ -155,6 +203,31 @@ object SessionWatcher {
     }
 
     // ------------------------------------------------------------------
+
+    /**
+     * 轮询一次会话列表，靠 `running` 集合的变化判断「跑完了」。
+     *
+     * 这是 WS 的降级方案，语义上等价：原来靠 `api-session/status(sessionId, running)`
+     * 事件，现在靠两次快照的差集。代价是最多 [POLL_MS] 的延迟。
+     */
+    private suspend fun pollTick(client: DshApi) {
+        val snap = runCatching { client.snapshot() }.getOrNull()
+        if (snap == null) {
+            _live.value = false
+            _mode.value = Mode.Down
+            return
+        }
+        _live.value = true
+        _lastEventAt.value = System.currentTimeMillis()
+        val finished = synchronized(this) {
+            titles.putAll(snap.titles)
+            val gone = running.filter { it !in snap.running }
+            running.clear()
+            running.addAll(snap.running)
+            gone
+        }
+        for (id in finished) push(id, Kind.Done, null)
+    }
 
     private fun handle(event: String, args: JSONArray) {
         val sessionId = args.optString(0).orEmpty()

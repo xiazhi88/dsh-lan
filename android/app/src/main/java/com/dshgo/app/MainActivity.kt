@@ -799,6 +799,7 @@ private fun Shell(
     val streamLiveState by SessionWatcher.live.collectAsStateWithLifecycle()
     val streamErrorState by SessionWatcher.lastError.collectAsStateWithLifecycle()
     val lastEventAtState by SessionWatcher.lastEventAt.collectAsStateWithLifecycle()
+    val streamModeState by SessionWatcher.mode.collectAsStateWithLifecycle()
     val notices by SessionWatcher.notices.collectAsStateWithLifecycle()
     val unseen by SessionWatcher.unseen.collectAsStateWithLifecycle()
     val live by SessionWatcher.live.collectAsStateWithLifecycle()
@@ -889,6 +890,7 @@ private fun Shell(
                 onTestNotify = onTestNotify,
                 onNotifySettings = onNotifySettings,
                 streamLive = streamLiveState,
+                streamMode = streamModeState.name.lowercase(),
                 streamError = streamErrorState,
                 lastEventAt = lastEventAtState,
                 scale = state.scale,

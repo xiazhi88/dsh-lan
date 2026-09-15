@@ -335,6 +335,8 @@ fun SettingsSheet(
     notifyProblem: String?,
     /** 事件流是否连着；通知全靠它。 */
     streamLive: Boolean,
+    /** 当前靠什么获知会话状态："stream" / "poll" / "down"。 */
+    streamMode: String,
     /** 最近一次断开的原因（null = 没出过错）。 */
     streamError: String?,
     /** 最近收到会话事件的时间，0 = 一条都没收到过。 */
@@ -591,12 +593,19 @@ fun SettingsSheet(
                             )
                             Spacer(Modifier.width(8.dp))
                             Text(
-                                if (streamLive) "事件流已连接" else "事件流未连接",
+                                when (streamMode) {
+                                    "stream" -> "事件流已连接"
+                                    "poll" -> "轮询模式（上游不支持事件流）"
+                                    else -> "事件流未连接"
+                                },
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.onSurface,
                             )
                         }
                         val detail = when {
+                            streamMode == "poll" ->
+                                "这台电脑上的 DSH 没有 WebSocket 事件流（0.1.2 之前没有），" +
+                                    "已自动改用轮询，通知延迟最多几秒。"
                             streamError != null -> "上次断开：$streamError"
                             streamLive && lastEventAt > 0 -> "最近一条会话事件：${relativeTime(lastEventAt)}"
                             streamLive -> "已连接，还没收到过会话事件"
@@ -617,7 +626,11 @@ fun SettingsSheet(
                                 clip.setText(AnnotatedString(
                                     "dshgo 诊断\n" +
                                         "入口地址：$url\n" +
-                                        "事件流：" + (if (streamLive) "已连接" else "未连接") + "\n" +
+                                        "事件流：" + when (streamMode) {
+                                            "stream" -> "已连接（实时）"
+                                            "poll" -> "轮询模式"
+                                            else -> "未连接"
+                                        } + "\n" +
                                         "断开原因：" + (streamError ?: "（无）") + "\n" +
                                         "最近事件：" + (if (lastEventAt > 0) relativeTime(lastEventAt) else "从未收到"),
                                 ))
