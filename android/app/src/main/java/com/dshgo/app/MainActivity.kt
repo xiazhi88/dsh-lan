@@ -226,8 +226,9 @@ class MainActivity : ComponentActivity() {
                     updateLatest = ui.updateLatest,
                     updateNewer = ui.updateNewer,
                     updateChecking = ui.updateChecking,
+                    updateApkUrl = ui.updateApkUrl,
                     onCheckUpdate = { checkUpdate(force = true) },
-                    onDownload = ::openDownload,
+                    onDownload = { url -> openDownload(url) },
                     onOpenPanel = {
                         SessionWatcher.markAllSeen()
                         ui = ui.copy(panelOpen = true)
@@ -635,16 +636,25 @@ class MainActivity : ComponentActivity() {
         Thread({
             val r = UpdateCheck.check(this, BuildConfig.VERSION_NAME, force)
             handler.post {
-                ui = ui.copy(updateLatest = r.latest, updateNewer = r.newer, updateChecking = false)
+                ui = ui.copy(
+                    updateLatest = r.latest,
+                    updateNewer = r.newer,
+                    updateApkUrl = r.apkUrl,
+                    updateChecking = false,
+                )
             }
         }, "dsh-update-check").start()
     }
 
-    /** 打开 APK 下载页（交给浏览器，App 自己不下载、不装）。 */
-    private fun openDownload() {
+    /**
+     * 打开 APK 下载页（交给浏览器，App 自己不下载、不装）。
+     *
+     * 默认用镜像 —— GitHub 国内经常打不开。用户真要官方包时，设置里另有入口。
+     */
+    private fun openDownload(url: String = ui.updateApkUrl) {
         runCatching {
             startActivity(
-                Intent(Intent.ACTION_VIEW, android.net.Uri.parse(UpdateCheck.APK_URL))
+                Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             )
         }
@@ -837,6 +847,8 @@ data class ShellState(
     val updateNewer: Boolean = false,
     /** 正在手动检查。 */
     val updateChecking: Boolean = false,
+    /** 本次结果建议的下载地址（镜像优先，官方兜底）。 */
+    val updateApkUrl: String = UpdateCheck.APK_URL,
 )
 
 // ---------------------------------------------------------------------------
@@ -865,8 +877,9 @@ private fun Shell(
     updateLatest: String?,
     updateNewer: Boolean,
     updateChecking: Boolean,
+    updateApkUrl: String,
     onCheckUpdate: () -> Unit,
-    onDownload: () -> Unit,
+    onDownload: (String) -> Unit,
     onOpenPanel: () -> Unit,
     onClosePanel: () -> Unit,
     onClearNotices: () -> Unit,
@@ -992,6 +1005,7 @@ private fun Shell(
                 updateLatest = updateLatest,
                 updateNewer = updateNewer,
                 updateChecking = updateChecking,
+                updateApkUrl = updateApkUrl,
                 onCheckUpdate = onCheckUpdate,
                 onDownload = onDownload,
                 currentVersion = BuildConfig.VERSION_NAME,

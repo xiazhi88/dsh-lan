@@ -74,6 +74,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dshgo.app.Prefs
+import com.dshgo.app.data.UpdateCheck
 import com.dshgo.app.R
 import com.dshgo.app.ui.theme.DshColor
 import kotlin.math.roundToInt
@@ -351,8 +352,10 @@ fun SettingsSheet(
     updateNewer: Boolean,
     /** 正在手动检查。 */
     updateChecking: Boolean,
+    /** 本次结果建议的下载地址（镜像优先）。 */
+    updateApkUrl: String,
     onCheckUpdate: () -> Unit,
-    onDownload: () -> Unit,
+    onDownload: (String) -> Unit,
     scale: Float,
     onScale: (Float) -> Unit,
     onLayout: (String) -> Unit,
@@ -580,12 +583,24 @@ fun SettingsSheet(
                                 modifier = Modifier.weight(1f),
                             )
                             OutlinedButton(
-                                onClick = onDownload,
+                                onClick = { onDownload(updateApkUrl) },
                                 shape = RoundedCornerShape(12.dp),
                                 contentPadding = PaddingValues(horizontal = 12.dp),
                             ) {
-                                Text("去下载", style = MaterialTheme.typography.labelMedium)
+                                Text("下载", style = MaterialTheme.typography.labelMedium)
                             }
+                        }
+                        // 镜像和官方各给一个入口：国内镜像快，官方地址是"正本"。
+                        Text(
+                            "下载走 jsDelivr 镜像（国内可直连）。要官方包就点下面那个。",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        TextButton(
+                            onClick = { onDownload(UpdateCheck.APK_URL) },
+                            contentPadding = PaddingValues(horizontal = 6.dp),
+                        ) {
+                            Text("从 GitHub 下载", style = MaterialTheme.typography.labelSmall)
                         }
                     } else if (!updateChecking && updateLatest != null && !updateNewer) {
                         Spacer(Modifier.height(6.dp))
