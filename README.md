@@ -51,6 +51,37 @@ authority 也始终一致。
 - **注入两个 polyfill**：`crypto.randomUUID` 在 `http://<IP>`（非安全上下文）里原生不可用，
   而 DSH 连接层拿它生成 RPC id；`AbortSignal.any` 在旧 WebView 上缺失会让发送消息直接失败
 
+## DSH 版本要求
+
+**最低 `0.1.2-rc.1`。**
+
+插件本身任何版本都能跑（它只是转发），但**通知与应用内的会话状态**依赖两个服务端能力，
+而它们都是 `0.1.2-alpha.2` 才加的：
+
+| 能力 | 起始版本 | 谁声明 |
+|---|---|---|
+| `session/list` RPC | **0.1.2-alpha.2** | `@deepseek-ai/dsh-api-session-controller` |
+| WebSocket 事件流 `/api/remote.mux` | **0.1.2-alpha.2** | `@deepseek-ai/dsh-api-gateway` 的 `registerUpgrade` |
+
+版本过老时的表现（我们在这上面栽过）：
+
+```
+WebSocket 事件流 /api/remote.mux  → 服务端直接掐断（升级路由没注册）
+session/list RPC                  → HTTP 404 not found（包都不存在）
+```
+
+> `0.1.2-alpha.2` 是最早同时具备两者的版本，但 alpha 不建议用 —— 所以写 `0.1.2-rc.1`。
+
+**升级**：
+
+```sh
+npm i -g @deepseek-ai/dsh@latest
+```
+
+> App 侧对「太老」做了兜底：WS 连不上会自动退到轮询 `session/list`。
+> 但那也要求 `session/list` 存在 —— 低于 `0.1.2-alpha.2` 时它是真的没有，
+> 只能在界面上明确告诉你去升级。
+
 ## 安装
 
 ```sh

@@ -373,7 +373,26 @@ app/src/main/java/com/dsh/remote/
 
 ## 十一、系统要求
 
-**需要较新的 Android System WebView（约 Chrome 119+）。**
+### DSH 版本：最低 `0.1.2-rc.1`
+
+通知与会话状态依赖两个服务端能力，都是 `0.1.2-alpha.2` 才加的：
+
+| 能力 | 起始版本 | 谁声明 |
+|---|---|---|
+| `session/list` RPC | 0.1.2-alpha.2 | `@deepseek-ai/dsh-api-session-controller` |
+| WebSocket 事件流 | 0.1.2-alpha.2 | `@deepseek-ai/dsh-api-gateway` 的 `registerUpgrade` |
+
+低于它的表现：WS 被直接掐断（`unexpected end of stream`）、`session/list` 返回 404。
+App 会退到轮询，但轮询也要 `session/list` —— 所以低于该版本时通知用不了，
+界面上会直接提示升级。
+
+```sh
+npm i -g @deepseek-ai/dsh@latest
+```
+
+### WebView：约 Chrome 119+
+
+**需要较新的 Android System WebView。**
 
 DSH 的前端产物用了 `Promise.withResolvers` 等新 API。WebView 太老时页面会**整页白屏**，
 logcat 里能看到：
