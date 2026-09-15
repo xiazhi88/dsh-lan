@@ -1,6 +1,6 @@
-package com.dsh.remote.web
+package com.dshgo.app.web
 
-import com.dsh.remote.Prefs
+import com.dshgo.app.Prefs
 
 /**
  * 往 DSH 页面里注入的一小段脚本 —— **客户端侧的布局控制**。

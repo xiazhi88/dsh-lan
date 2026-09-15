@@ -1,14 +1,14 @@
-// dsh-lan 的浏览器半：在 DSH 设置里加一个「局域网访问」页签。
+// dshgo 的浏览器半：在 DSH 设置里加一个「局域网访问」页签。
 //
 // 这个文件**是手写的源码，没有构建步骤** —— 页面本身很简单（地址列表 + 状态 + 引导），
 // 为它引入 esbuild 和一套打包配置不划算。DSH 的客户端模块系统用 __ModuleLoader__
 // 加载插件，包装只有几行；React 由宿主以**模块**形式提供（不是全局变量）。
 //
-// 数据来源就是本插件自己的自描述端点 /__dsh_lan__/info —— 与页面同源，
+// 数据来源就是本插件自己的自描述端点 /__dshgo__/info —— 与页面同源，
 // 不需要额外开一条 host RPC 通道。
 
 window.__ModuleLoader__.load({
-  id: 'dsh-lan',
+  id: 'dshgo',
   // eslint-disable-next-line no-unused-vars
   factory: (require) => {
     var module = { exports: {} };
@@ -19,7 +19,7 @@ window.__ModuleLoader__.load({
     var useEffect = React.useEffect;
     var useState = React.useState;
 
-    const name = 'dsh-lan';
+    const name = 'dshgo';
 
     /** 只要 slots：用它把页签挂进设置。 */
     const inject = ['slots'];
@@ -33,8 +33,8 @@ window.__ModuleLoader__.load({
      * latest，文件名是照字面取的 —— 名字里带版本的话，发下一版当天就 404，
      * 而且不会有人察觉。详见收录指南里那条警告。
      */
-    const APP_APK_URL = 'https://github.com/xiazhi88/dsh-lan/releases/latest/download/dsh-lan-app.apk';
-    const APP_RELEASES_URL = 'https://github.com/xiazhi88/dsh-lan/releases/latest';
+    const APP_APK_URL = 'https://github.com/xiazhi88/dshgo/releases/latest/download/dshgo-app.apk';
+    const APP_RELEASES_URL = 'https://github.com/xiazhi88/dshgo/releases/latest';
     const APP_VERSION = '3.0.0';
 
     /**
@@ -55,7 +55,7 @@ window.__ModuleLoader__.load({
     /**
      * 端点 404 时给用户看的话。
      *
-     * `/__dsh_lan__/info` 是**服务端半**提供的，所以 404 不是「读取出错」，而是
+     * `/__dshgo__/info` 是**服务端半**提供的，所以 404 不是「读取出错」，而是
      * 服务端半压根没在跑。裸的 `HTTP 404` 让人完全无从下手 —— 下面两种原因都常见，
      * 而且用户自己能查：
      *   ① 只装了包但没进 profile 的 bundle 层（前端照样加载，服务端没有）
@@ -63,11 +63,11 @@ window.__ModuleLoader__.load({
      */
     const NOT_RUNNING = L(
       '服务端半没有运行 —— 这个地址由它提供，只加载前端是不会有它的。'
-      + '常见原因：① 插件没进入 profile 的 bundle 层（看 dsh 启动日志里有没有 dsh-lan 那两行）；'
+      + '常见原因：① 插件没进入 profile 的 bundle 层（看 dsh 启动日志里有没有 dshgo 那两行）；'
       + '② 转发端口被占用。先重启一次 dsh web 看看。',
       'The host half is not running — this address is served by it, and the client half alone '
       + 'will not provide it. Usual causes: (1) the plugin never entered the profile bundle layer '
-      + '(check the boot log for the dsh-lan lines); (2) the forward port was taken. '
+      + '(check the boot log for the dshgo lines); (2) the forward port was taken. '
       + 'Try restarting dsh web first.',
     );
 
@@ -344,7 +344,7 @@ window.__ModuleLoader__.load({
 
       useEffect(() => {
         let alive = true;
-        fetch('/__dsh_lan__/info', { headers: { accept: 'application/json' } })
+        fetch('/__dshgo__/info', { headers: { accept: 'application/json' } })
           .then((res) => (res.ok ? res.json() : Promise.reject(new Error('HTTP ' + res.status))))
           .then((data) => { if (alive) setInfo(data); })
           .catch((err) => {
@@ -397,8 +397,8 @@ window.__ModuleLoader__.load({
 
           !error && info && all.length === 0 && info.listening === false
             ? h('div', { style: { ...styles.muted, color: C.err } },
-                L('转发端口没起来 —— 服务端半在跑，但没能监听任何端口（启动日志里会有 dsh-lan: 监听失败 那一行）。',
-                  'The forward port is not up — the host half runs but could not bind any port (look for the dsh-lan: line in the boot log).'))
+                L('转发端口没起来 —— 服务端半在跑，但没能监听任何端口（启动日志里会有 dshgo: 监听失败 那一行）。',
+                  'The forward port is not up — the host half runs but could not bind any port (look for the dshgo: line in the boot log).'))
             : null,
 
           !error && info && all.length === 0 && info.listening !== false
@@ -446,7 +446,7 @@ window.__ModuleLoader__.load({
         ctx.slots.register(
           {
             name: 'settings.section',
-            id: 'dsh-lan',
+            id: 'dshgo',
             order: 2,
             label: () => L('局域网访问', 'LAN access'),
           },

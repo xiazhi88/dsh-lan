@@ -5,15 +5,15 @@ plugins {
 }
 
 android {
-    namespace = "com.dsh.remote"
+    namespace = "com.dshgo.app"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "com.dsh.remote"
+        applicationId = "com.dshgo.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 3
-        versionName = "3.0.0"
+        versionCode = 4
+        versionName = "3.1.0"
     }
 
     buildFeatures {
@@ -70,6 +70,10 @@ dependencies {
 
     // 事件流走 WebSocket（Android 平台没有 java.net.http.WebSocket）
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // 扫码。选 ZXing 的嵌入式封装而不是 ML Kit：后者依赖 Google Play 服务，
+    // 侧载安装 + 国内设备上常常不可用。
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0")
 
     // JVM 单元测试：PageInject 拼出来的 JS 要能被外部校验
     testImplementation("junit:junit:4.13.2")

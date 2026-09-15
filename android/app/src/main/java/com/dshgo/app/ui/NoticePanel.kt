@@ -1,4 +1,4 @@
-package com.dsh.remote.ui
+package com.dshgo.app.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -29,8 +29,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import com.dsh.remote.notify.SessionWatcher
-import com.dsh.remote.ui.theme.DshColor
+import com.dshgo.app.notify.SessionWatcher
+import com.dshgo.app.ui.theme.DshColor
 import java.util.concurrent.TimeUnit
 
 /**

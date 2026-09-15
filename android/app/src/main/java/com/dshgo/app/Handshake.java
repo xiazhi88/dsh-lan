@@ -1,4 +1,4 @@
-package com.dsh.remote;
+package com.dshgo.app;
 
 import java.io.InputStream;
 import java.net.HttpURLConnection;

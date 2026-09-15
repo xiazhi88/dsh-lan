@@ -1,4 +1,4 @@
-package com.dsh.remote.notify
+package com.dshgo.app.notify
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -10,8 +10,8 @@ import android.os.Build
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
-import com.dsh.remote.MainActivity
-import com.dsh.remote.R
+import com.dshgo.app.MainActivity
+import com.dshgo.app.R
 
 /**
  * 系统通知。两个渠道：常驻的监听提示是静音的，会话完成是要打扰你的。

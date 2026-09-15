@@ -1,4 +1,4 @@
-package com.dsh.remote
+package com.dshgo.app
 
 import android.content.Context
 import android.util.Log
@@ -31,7 +31,7 @@ object CrashLog {
         runCatching {
             val sw = StringWriter()
             PrintWriter(sw).use { pw ->
-                pw.println("DSH 口袋崩溃报告")
+                pw.println("DSH Go 崩溃报告")
                 pw.println("时间: ${SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date())}")
                 pw.println("线程: ${thread.name}")
                 pw.println("设备: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")

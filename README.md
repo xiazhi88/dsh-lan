@@ -1,17 +1,17 @@
-# dsh-lan
+# dshgo
 
 在手机 / 平板上用 DSH —— **一个 Android App，加一个让电脑可达的插件。**
 
 | | |
 |---|---|
-| **[Android App](android/)** | 真正为手机做的客户端。输入法不挡输入框、能传附件、会话跑完推送通知、随时切换入口地址。[**下载 APK**](https://github.com/xiazhi88/dsh-lan/releases/latest/download/dsh-lan-app.apk) · [源码](android/) |
-| **[插件](.)** | `dsh-lan`：把只监听 `127.0.0.1` 的 `dsh web` 暴露到局域网，并在设置里加一个「局域网访问」页签（地址 + 二维码）。 |
+| **[Android App](android/)** | 真正为手机做的客户端。输入法不挡输入框、能传附件、会话跑完推送通知、随时切换入口地址。[**下载 APK**](https://github.com/xiazhi88/dshgo/releases/latest/download/dshgo-app.apk) · [源码](android/) |
+| **[插件](.)** | `dshgo`：把只监听 `127.0.0.1` 的 `dsh web` 暴露到局域网，并在设置里加一个「局域网访问」页签（地址 + 二维码）。 |
 
 两者独立：App 也可以连你自己的隧道，插件也可以只给浏览器用。但配在一起是完整体验。
 
 ```
 ┌─────────┐        局域网 / Tailscale        ┌──────────────────────┐
-│ 手机 App │ ────────────────────────────────> │ dsh-lan :3081        │
+│ 手机 App │ ────────────────────────────────> │ dshgo :3081        │
 │         │ <──────────────────────────────── │   ↓ 改写成 loopback   │
 └─────────┘                                   │ dsh web  :3080       │
                                               └──────────────────────┘
@@ -47,7 +47,7 @@ authority 也始终一致。
 
 ```sh
 # 局域网入口（本插件，必须）
-dsh plugin --profile web add github:xiazhi88/dsh-lan -w
+dsh plugin --profile web add github:xiazhi88/dshgo -w
 
 # 手机端布局适配（可选，但手机上没有它体验会差很多）
 dsh plugin --profile web add dsh-web-mobile -w
@@ -55,7 +55,7 @@ dsh plugin --profile web add dsh-web-mobile -w
 # 然后重启 dsh web
 ```
 
-> 已发布到 npm 之后第一条可以简写成 `dsh plugin --profile web add dsh-lan -w`。
+> 已发布到 npm 之后第一条可以简写成 `dsh plugin --profile web add dshgo -w`。
 >
 > `dsh plugin add` 会把声明了 `dsh.bundle` 的包自动加进 profile 的 `bundles`，
 > 所以你不用手改配置文件。
@@ -66,17 +66,17 @@ dsh plugin --profile web add dsh-web-mobile -w
 
 - `dsh web` 本身照常运行
 - 设置里**也会**多出「局域网访问」页签（前端半按已安装的包加载，与 bundle 层无关）
-- 但页签里只显示「**服务端半没有运行**」，终端里也没有 `dsh-lan:` 那两行
+- 但页签里只显示「**服务端半没有运行**」，终端里也没有 `dshgo:` 那两行
 
 这不是装失败，是没重启。重启后终端应该出现：
 
 ```
-dsh-lan: 局域网地址 http://192.168.1.100:3081  （上游 127.0.0.1:3080）
-dsh-lan: 自描述端点 /__dsh_lan__/info（客户端可据此自动发现地址）
+dshgo: 局域网地址 http://192.168.1.100:3081  （上游 127.0.0.1:3080）
+dshgo: 自描述端点 /__dshgo__/info（客户端可据此自动发现地址）
 ```
 
 **一行都没有**，才是真的没进 `bundle` 层 —— 去看 profile 的 `package.json` 里
-`dsh.profile.bundles` 有没有 `dsh-lan`。
+`dsh.profile.bundles` 有没有 `dshgo`。
 
 ### 为什么不合成一个包
 
@@ -89,7 +89,7 @@ dsh-lan: 自描述端点 /__dsh_lan__/info（客户端可据此自动发现地�
 rows = parseSimplePatch(readFileSync(join(dir, 'cordis.patch.yml'), 'utf8'))
 ```
 
-于是它不只挂了 `dsh-lan`，还把 `dsh-web-mobile` **又挂了一次**。如果用户自己也装过
+于是它不只挂了 `dshgo`，还把 `dsh-web-mobile` **又挂了一次**。如果用户自己也装过
 （它本来就在 `bundles` 里），就是双重挂载：
 
 ```
@@ -109,7 +109,7 @@ peer dependency，不装也能用，只是手机上看到的是 DSH 桌面 UI。
 重启后终端会打印局域网地址：
 
 ```
-dsh-lan: 局域网地址 http://192.168.1.100:3081  （上游 127.0.0.1:3080）
+dshgo: 局域网地址 http://192.168.1.100:3081  （上游 127.0.0.1:3080）
 ```
 
 手机连同一 WiFi，把地址填进客户端即可。
@@ -119,7 +119,7 @@ dsh-lan: 局域网地址 http://192.168.1.100:3081  （上游 127.0.0.1:3080）
 在 profile 的 `cordis.patch.yml` 里：
 
 ```yaml
-- id: dsh-lan
+- id: dshgo
   config:
     port: 3081        # 对外端口，默认 3081
     bind: 0.0.0.0     # 对外绑定地址
@@ -131,7 +131,7 @@ dsh-lan: 局域网地址 http://192.168.1.100:3081  （上游 127.0.0.1:3080）
 
 装上后 DSH 设置里会多一个一级入口 **「局域网访问」**（与「通用设置 / 模型 / 插件」同级）：
 
-![设置页签](https://raw.githubusercontent.com/xiazhi88/dsh-lan/main/docs/settings-tab.png)
+![设置页签](https://raw.githubusercontent.com/xiazhi88/dshgo/main/docs/settings-tab.png)
 
 它展示：本机所有可用地址（点一下复制）、**从外面访问的引导**、监听状态。
 
@@ -147,12 +147,12 @@ dsh-lan: 局域网地址 http://192.168.1.100:3081  （上游 127.0.0.1:3080）
 
 | 已装 Tailscale | 未装 |
 |---|---|
-| ![已就绪](https://raw.githubusercontent.com/xiazhi88/dsh-lan/main/docs/settings-tab.png) | ![引导](https://raw.githubusercontent.com/xiazhi88/dsh-lan/main/docs/settings-tailscale-guide.png) |
+| ![已就绪](https://raw.githubusercontent.com/xiazhi88/dshgo/main/docs/settings-tab.png) | ![引导](https://raw.githubusercontent.com/xiazhi88/dshgo/main/docs/settings-tailscale-guide.png) |
 
 对应关系：
 
 ```
-GET /__dsh_lan__/info
+GET /__dshgo__/info
 → { "addresses": ["http://192.168.1.100:3081", "http://100.100.190.107:3081"],
     "tailscale": ["http://100.100.190.107:3081"] }
 ```
@@ -164,7 +164,7 @@ GET /__dsh_lan__/info
 ```js
 ctx.slots.inject('settings.section', () =>
   ctx.slots.register(
-    { name: 'settings.section', id: 'dsh-lan', order: 2, label: () => '局域网访问' },
+    { name: 'settings.section', id: 'dshgo', order: 2, label: () => '局域网访问' },
     LanSettings,
   ),
 );
@@ -176,9 +176,9 @@ ctx.slots.inject('settings.section', () =>
 ## 自描述端点
 
 ```
-GET /__dsh_lan__/info
+GET /__dshgo__/info
 → {
-    "name": "dsh-lan",
+    "name": "dshgo",
     "listening": true,                             // 转发代理到底有没有起来
     "port": 3081,                                  // 实际监听的端口（被占时可能是 3082…）
     "upstreamPort": 3080,
@@ -191,8 +191,8 @@ GET /__dsh_lan__/info
 
 | 访问方式 | 能否拿到 |
 |---|---|
-| 本机 `http://127.0.0.1:3080/__dsh_lan__/info` | ✅ 直接命中 |
-| 手机 `http://192.168.1.100:3081/__dsh_lan__/info` | ✅ 代理转发到 3080，同一个处理器 |
+| 本机 `http://127.0.0.1:3080/__dshgo__/info` | ✅ 直接命中 |
+| 手机 `http://192.168.1.100:3081/__dshgo__/info` | ✅ 代理转发到 3080，同一个处理器 |
 
 早期版本只让代理应答这个路径，于是**本机看页面时永远是 404** —— 设置页写
 「服务端半没有运行」，而终端里插件明明跑得好好的，重启也救不了。前端取的是
@@ -229,7 +229,7 @@ GET /__dsh_lan__/info
 
 两者定位不同，可以并存：
 
-| | dsh-lan | dsh-pocket |
+| | dshgo | dsh-pocket |
 |---|---|---|
 | 定位 | 只做局域网转发，给客户端用 | 完整的手机访问方案 |
 | 公网隧道 | ✗ | ✓（cloudflared） |

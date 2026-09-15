@@ -1,4 +1,4 @@
-// dsh-lan 的代理行为测试。用一个「假 dsh web」把关键契约钉死：
+// dshgo 的代理行为测试。用一个「假 dsh web」把关键契约钉死：
 //   · Host/Origin 必须被改写成 loopback（否则真实 DSH 的栅栏 401）
 //   · 首屏必须补一次 ?token=（否则永远拿不到会话 cookie）
 //   · 已有 cookie 时不能再补（否则每次导航都多一跳 303）

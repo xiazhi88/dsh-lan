@@ -1,11 +1,11 @@
-package com.dsh.remote
+package com.dshgo.app
 
 import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.os.IBinder
-import com.dsh.remote.notify.NotificationCenter
-import com.dsh.remote.notify.SessionWatcher
+import com.dshgo.app.notify.NotificationCenter
+import com.dshgo.app.notify.SessionWatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob

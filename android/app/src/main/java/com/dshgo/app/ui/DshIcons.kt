@@ -1,4 +1,4 @@
-package com.dsh.remote.ui
+package com.dshgo.app.ui
 
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor

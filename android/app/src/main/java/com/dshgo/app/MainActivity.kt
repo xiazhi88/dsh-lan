@@ -1,4 +1,4 @@
-package com.dsh.remote
+package com.dshgo.app
 
 import android.annotation.SuppressLint
 import android.content.Intent
@@ -25,8 +25,8 @@ import java.util.concurrent.TimeUnit
 import java.io.ByteArrayInputStream
 import okhttp3.Request
 import okhttp3.OkHttpClient
-import com.dsh.remote.web.PageInject
-import com.dsh.remote.data.WebViewCookies
+import com.dshgo.app.web.PageInject
+import com.dshgo.app.data.WebViewCookies
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.layout.Box
@@ -41,9 +41,9 @@ import androidx.compose.foundation.layout.ime
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.runtime.Composable
-import com.dsh.remote.ui.NoticePanel
-import com.dsh.remote.notify.SessionWatcher
-import com.dsh.remote.notify.NotificationCenter
+import com.dshgo.app.ui.NoticePanel
+import com.dshgo.app.notify.SessionWatcher
+import com.dshgo.app.notify.NotificationCenter
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -56,15 +56,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.viewinterop.AndroidView
-import com.dsh.remote.ui.ConnectingScreen
-import com.dsh.remote.ui.CrashDialog
-import com.dsh.remote.ui.DshLoadingOverlay
-import com.dsh.remote.ui.DshStatusStrip
-import com.dsh.remote.ui.Screen
-import com.dsh.remote.ui.SettingsSheet
-import com.dsh.remote.ui.SetupScreen
-import com.dsh.remote.ui.StripHeight
-import com.dsh.remote.ui.theme.DshTheme
+import com.dshgo.app.ui.ConnectingScreen
+import com.dshgo.app.ui.CrashDialog
+import com.dshgo.app.ui.DshLoadingOverlay
+import com.dshgo.app.ui.DshStatusStrip
+import com.dshgo.app.ui.Screen
+import com.dshgo.app.ui.SettingsSheet
+import com.dshgo.app.ui.SetupScreen
+import com.dshgo.app.ui.StripHeight
+import com.dshgo.app.ui.theme.DshTheme
 
 /**
  * 单 Activity，**没有首页**。
@@ -127,6 +127,41 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.RequestPermission(),
     ) { granted -> setNotify(granted) }
 
+    /**
+     * 扫码填地址。
+     *
+     * 用 ZXing 的嵌入式 ScanContract：它自带一个相机 Activity，扫完把内容回传，
+     * 不用自己写预览/解码。选它而不是 ML Kit，是因为后者依赖 Google Play 服务 ——
+     * 侧载安装的设备上不保证有。
+     *
+     * 扫到就直接连，不再让用户点一次「连接」：二维码就是入口地址本身，
+     * 扫的动作已经表达了「用这个」。
+     */
+    private val scanLauncher = registerForActivityResult(
+        com.journeyapps.barcodescanner.ScanContract(),
+    ) { result ->
+        val raw = result.contents
+        if (raw.isNullOrBlank()) return@registerForActivityResult
+        val normalized = Prefs.normalize(raw)
+        if (normalized.isEmpty()) {
+            ui = ui.copy(setupError = "扫到的不是可用的地址：$raw")
+            return@registerForActivityResult
+        }
+        connect(normalized)
+    }
+
+    /** 点「扫描二维码」。没相机的设备会由系统抛出来，接住给一句人话。 */
+    private fun onScan() {
+        val options = com.journeyapps.barcodescanner.ScanOptions().apply {
+            setDesiredBarcodeFormats(com.journeyapps.barcodescanner.ScanOptions.QR_CODE)
+            setPrompt("对准电脑上的二维码")
+            setBeepEnabled(false)
+            setOrientationLocked(false)
+        }
+        runCatching { scanLauncher.launch(options) }
+            .onFailure { ui = ui.copy(setupError = "打不开相机 —— 检查有没有给相机权限，或直接手输地址。") }
+    }
+
     private val fileChooser = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
     ) { result ->
@@ -185,6 +220,7 @@ class MainActivity : ComponentActivity() {
                     onToggleNotify = ::requestNotify,
                     onTestNotify = ::onTestNotify,
                     onNotifySettings = ::onNotifySettings,
+                    onScan = ::onScan,
                     onOpenPanel = {
                         SessionWatcher.markAllSeen()
                         ui = ui.copy(panelOpen = true)
@@ -751,6 +787,7 @@ private fun Shell(
     onToggleNotify: () -> Unit,
     onTestNotify: () -> Unit,
     onNotifySettings: () -> Unit,
+    onScan: () -> Unit,
     onOpenPanel: () -> Unit,
     onClosePanel: () -> Unit,
     onClearNotices: () -> Unit,
@@ -791,6 +828,7 @@ private fun Shell(
                 error = state.setupError,
                 connecting = state.connecting,
                 onConnect = { onConnect(it) },
+                onScan = onScan,
                 onCancel = if (state.dshReady) onCancelSetup else null,
             )
 

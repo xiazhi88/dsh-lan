@@ -1,6 +1,6 @@
-package com.dsh.remote.web
+package com.dshgo.app.web
 
-import com.dsh.remote.Prefs
+import com.dshgo.app.Prefs
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

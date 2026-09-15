@@ -1,4 +1,4 @@
-package com.dsh.remote.data
+package com.dshgo.app.data
 
 import android.webkit.CookieManager
 import okhttp3.Cookie

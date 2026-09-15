@@ -1,7 +1,7 @@
-package com.dsh.remote.notify
+package com.dshgo.app.notify
 
 import android.content.Context
-import com.dsh.remote.data.DshApi
+import com.dshgo.app.data.DshApi
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job

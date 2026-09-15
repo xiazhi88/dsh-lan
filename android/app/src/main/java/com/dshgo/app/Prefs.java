@@ -1,4 +1,4 @@
-package com.dsh.remote;
+package com.dshgo.app;
 
 import android.content.Context;
 import android.content.SharedPreferences;

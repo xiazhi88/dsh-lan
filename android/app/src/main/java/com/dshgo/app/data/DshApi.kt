@@ -1,4 +1,4 @@
-package com.dsh.remote.data
+package com.dshgo.app.data
 
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

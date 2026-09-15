@@ -1,4 +1,4 @@
-# dsh-lan bundle patch —— 只挂自己这一行。
+# dshgo bundle patch —— 只挂自己这一行。
 #
 # ── 为什么这里不再挂 dsh-web-mobile（曾经挂过，是个错误）──
 #
@@ -7,7 +7,7 @@
 #
 #   市场的一键安装会热挂载它，读的就是这个文件 ——
 #   rows = parseSimplePatch(readFileSync(…'cordis.patch.yml'))
-#   于是它不只挂了 dsh-lan，还把 dsh-web-mobile 又挂了一次。如果用户自己
+#   于是它不只挂了 dshgo，还把 dsh-web-mobile 又挂了一次。如果用户自己
 #   也装过 dsh-web-mobile（它本来就在 profile 的 bundles 里），就变成双重挂载：
 #
 #     failed to apply loader entry (dsh-web-mobile):
@@ -19,8 +19,8 @@
 # 而且 dsh-web-mobile 的宿主半并不空：它会 patch http.ServerResponse.prototype
 # 做响应压缩、还会注册路由。挂两次是真的有害。
 #
-# 所以分工回到清晰的一人一半：dsh-lan 只做局域网转发，移动端适配由用户自己决定装不装。
+# 所以分工回到清晰的一人一半：dshgo 只做局域网转发，移动端适配由用户自己决定装不装。
 # 一个 patch 文件不该替另一个插件决定它挂几次。
 - insert:
-    - id: dsh-lan
-      name: dsh-lan
+    - id: dshgo
+      name: dshgo

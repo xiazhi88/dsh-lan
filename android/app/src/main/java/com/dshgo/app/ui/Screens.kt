@@ -1,4 +1,4 @@
-package com.dsh.remote.ui
+package com.dshgo.app.ui
 
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.foundation.layout.PaddingValues
@@ -73,9 +73,9 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.dsh.remote.Prefs
-import com.dsh.remote.R
-import com.dsh.remote.ui.theme.DshColor
+import com.dshgo.app.Prefs
+import com.dshgo.app.R
+import com.dshgo.app.ui.theme.DshColor
 import kotlin.math.roundToInt
 
 
@@ -95,6 +95,8 @@ fun SetupScreen(
     error: String?,
     connecting: Boolean,
     onConnect: (String) -> Unit,
+    /** 点「扫码」的回调；返回扫到的内容（App 侧负责解析与填回）。 */
+    onScan: () -> Unit,
     modifier: Modifier = Modifier,
     /** 非空时在左上角显示返回箭头 —— 从会话里点「更改地址」进来才给退路。 */
     onCancel: (() -> Unit)? = null,
@@ -130,7 +132,7 @@ fun SetupScreen(
             BrandMark()
             Spacer(Modifier.height(16.dp))
             Text(
-                "DSH 口袋",
+                "DSH Go",
                 style = MaterialTheme.typography.titleLarge,
                 color = MaterialTheme.colorScheme.onBackground,
             )
@@ -593,7 +595,7 @@ fun SettingsSheet(
 
             Spacer(Modifier.height(22.dp))
             Text(
-                "DSH 口袋 3.0 · 直连本机 dsh-pocket · 界面为 DSH 原生",
+                "DSH Go · 直连你自己的电脑 · 界面为 DSH 原生",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 textAlign = TextAlign.Center,

@@ -1,4 +1,4 @@
-package com.dsh.remote.ui.theme
+package com.dshgo.app.ui.theme
 
 import androidx.compose.foundation.isSystemInDarkTheme
 import android.app.Activity
