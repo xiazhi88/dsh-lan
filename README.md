@@ -30,9 +30,15 @@ authority 也始终一致。
 **一个包，装完就能用：**
 
 ```sh
-dsh plugin --profile web add dsh-lan -w
+# 从 GitHub 安装
+dsh plugin --profile web add github:xiazhi88/dsh-lan -w
 # 然后重启 dsh web
 ```
+
+> 已发布到 npm 之后可以简写成 `dsh plugin --profile web add dsh-lan -w`。
+>
+> `dsh plugin add` 会把声明了 `dsh.bundle` 的包自动加进 profile 的 `bundles`，
+> 所以你不用手改配置文件。
 
 装上后它自动挂两件事：
 
