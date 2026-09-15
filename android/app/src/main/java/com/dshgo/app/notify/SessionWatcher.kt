@@ -125,15 +125,29 @@ object SessionWatcher {
         val approvals: Int = 0,
         val lastDoneTitle: String? = null,
         val lastDoneAt: Long = 0L,
+        /**
+         * 最早那条待批准的**完整信息**。
+         *
+         * 为什么把它整个带出来，而不是只带个数量：小组件和常驻通知都要在上面
+         * 放「允许/拒绝」按钮，而按钮的 PendingIntent 必须带上 eventId/clientId
+         * 才回执得回去。只给数量的话，界面能显示"等你批准"却点不了 ——
+         * 那正是用户第一次测试时碰到的问题。
+         */
+        val firstApproval: DshApi.ApprovalAsk? = null,
     ) {
+        /** 有没有可以就地处理的审批。 */
+        val actionable: Boolean get() = firstApproval != null
+
         fun title(): String = when {
-            approvals > 0 -> "$approvals 个操作等你批准"
+            approvals > 1 -> "$approvals 个操作等你批准"
+            approvals == 1 -> "等你批准：${firstApproval?.toolName ?: "一个操作"}"
             running > 0 -> "$running 个会话在跑"
             else -> "DSH 空闲"
         }
 
         fun detail(host: String): String = buildString {
-            if (running > 0) append("正在执行…")
+            firstApproval?.reason?.takeIf { it.isNotBlank() }?.let { append(it.take(60)) }
+            if (isEmpty() && running > 0) append("正在执行…")
             if (lastDoneTitle != null && lastDoneAt > 0) {
                 if (isNotEmpty()) append(" · ")
                 append("刚完成「").append(lastDoneTitle.take(18)).append("」")
@@ -293,6 +307,7 @@ object SessionWatcher {
                 approvals = _approvals.value.size,
                 lastDoneTitle = _notices.value.firstOrNull { it.kind == Kind.Done }?.title,
                 lastDoneAt = _notices.value.firstOrNull { it.kind == Kind.Done }?.at ?: 0L,
+                firstApproval = _approvals.value.firstOrNull(),
             )
         }
         if (_summary.value == s) return          // 没变就别刷，省电

@@ -1,6 +1,6 @@
 {
-  "version": "4.0.3",
-  "apk": "https://cdn.jsdelivr.net/gh/xiazhi88/dshgo@dist-v4.0.3/dshgo-app.apk",
+  "version": "4.0.4",
+  "apk": "https://cdn.jsdelivr.net/gh/xiazhi88/dshgo@dist-v4.0.4/dshgo-app.apk",
   "apkFallback": "https://github.com/xiazhi88/dshgo/releases/latest/download/dshgo-app.apk",
-  "notes": "\u66f4\u65b0\u68c0\u67e5\u4e09\u6e90\u53d6\u6700\u5927\uff1b\u5e38\u9a7b\u624b\u5de5\u4e0b\u8f7d\u5165\u53e3"
+  "notes": "小组件与常驻通知就地显示「允许/拒绝」；审批信息随 summary 一起带出"
 }

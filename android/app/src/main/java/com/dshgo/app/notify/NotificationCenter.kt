@@ -209,6 +209,12 @@ object NotificationCenter {
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_MIN)
             .setShowWhen(false)
+            // 有审批就地可点 —— 用户看到"等你批准"却点不了，那种界面等于没说
+            .apply {
+                summary.firstApproval?.let { ask ->
+                    approvalActions(ctx, ask).forEach { addAction(it) }
+                }
+            }
             .build()
     }
 
@@ -239,6 +245,45 @@ object NotificationCenter {
      * 用 HIGH 重要度 + 响铃震动：agent 正卡在这里等你，这是**唯一一个
      * "不回答就真的白等"的场景**，比"会话完成"更该吵醒人。
      */
+    /**
+     * 造一个「替用户回答这条审批」的广播 Intent。
+     *
+     * 通知的动作按钮和小组件的按钮都走这里 —— 两处各写一遍迟早会不一致，
+     * 而不一致的后果是"一个能点、一个点了没反应"，很难查。
+     */
+    fun approvalIntent(ctx: Context, ask: DshApi.ApprovalAsk, allow: Boolean): Intent =
+        Intent(ctx, ApprovalReceiver::class.java)
+            .setAction(if (allow) ACTION_APPROVE else ACTION_REJECT)
+            .putExtra(EXTRA_EVENT_ID, ask.eventId)
+            .putExtra(EXTRA_CLIENT_ID, ask.clientId)
+            .putExtra(EXTRA_TOOL, ask.toolName)
+            .putExtra(EXTRA_REASON, ask.reason)
+
+    /**
+     * 常驻通知上的两个动作按钮。
+     *
+     * 常驻通知原本只报状态，用户看到「1 个操作等你批准」却只能去通知栏翻那条
+     * 单独的审批通知 —— 现在就地能点。requestCode 用 eventId 派生，
+     * 不同审批不会互相覆盖 PendingIntent。
+     */
+    private fun approvalActions(
+        ctx: Context,
+        ask: DshApi.ApprovalAsk,
+    ): List<NotificationCompat.Action> {
+        val base = 0x3000_0000 or (ask.eventId.hashCode() and 0x0FFF_FFFF)
+        fun make(allow: Boolean, label: String, code: Int) = NotificationCompat.Action.Builder(
+            0,
+            label,
+            PendingIntent.getBroadcast(
+                ctx,
+                base + code,
+                approvalIntent(ctx, ask, allow),
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            ),
+        ).build()
+        return listOf(make(true, "允许", 1), make(false, "拒绝", 2))
+    }
+
     fun postApproval(ctx: Context, ask: DshApi.ApprovalAsk) {
         ensureChannels(ctx)
         val id = approvalId(ask.eventId)
@@ -249,20 +294,6 @@ object NotificationCenter {
             ctx, id, open,
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
-
-        fun action(action: String, label: String, code: Int): NotificationCompat.Action {
-            val i = Intent(ctx, ApprovalReceiver::class.java)
-                .setAction(action)
-                .putExtra(EXTRA_EVENT_ID, ask.eventId)
-                .putExtra(EXTRA_CLIENT_ID, ask.clientId)
-                .putExtra(EXTRA_TOOL, ask.toolName)
-                .putExtra(EXTRA_REASON, ask.reason)
-            val p = PendingIntent.getBroadcast(
-                ctx, id + code, i,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
-            )
-            return NotificationCompat.Action.Builder(0, label, p).build()
-        }
 
         val text = buildString {
             append(ask.toolName)
@@ -279,8 +310,7 @@ object NotificationCenter {
             .setAutoCancel(true)
             .setOngoing(false)
             .setContentIntent(pi)
-            .addAction(action(ACTION_APPROVE, "允许", 1))
-            .addAction(action(ACTION_REJECT, "拒绝", 2))
+            .apply { approvalActions(ctx, ask).forEach { addAction(it) } }
             .build()
 
         runCatching { NotificationManagerCompat.from(ctx).notify(id, n) }

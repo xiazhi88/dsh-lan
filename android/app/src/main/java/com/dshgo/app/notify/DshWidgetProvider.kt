@@ -53,16 +53,56 @@ class DshWidgetProvider : AppWidgetProvider() {
             }
         }
 
+        /**
+         * 画小组件。
+         *
+         * ★ 有审批时**两个按钮换成「允许」「拒绝」**。
+         *
+         * 这条是用户第一次实测时发现的缺陷：小组件明明写着「1 个操作等你批准」，
+         * 却只能点「新会话」—— 想批准得下拉通知栏去翻那条单独的通知。
+         * 一个告诉你"有事等你"的界面，必须同时能让你把事办了。
+         *
+         * 用同一套布局、只换文案和点击行为：RemoteViews 换布局要重建整棵树，
+         * 而这里两个按钮的位置和样式本来就一样。
+         */
         private fun buildViews(ctx: Context, summary: SessionWatcher.Summary): RemoteViews =
             RemoteViews(ctx.packageName, R.layout.widget_dsh).apply {
                 setTextViewText(R.id.widget_title, summary.title())
                 setTextViewText(R.id.widget_detail, summary.detail("DSH"))
-                setOnClickPendingIntent(R.id.widget_new, tap(ctx, MainActivity.ACTION_NEW_SESSION, 1))
-                setOnClickPendingIntent(
-                    R.id.widget_recent,
-                    tap(ctx, MainActivity.ACTION_RECENT_SESSION, 2),
-                )
+
+                val ask = summary.firstApproval
+                if (ask != null) {
+                    setTextViewText(R.id.widget_new, "允许")
+                    setTextViewText(R.id.widget_recent, "拒绝")
+                    setOnClickPendingIntent(
+                        R.id.widget_new,
+                        answer(ctx, NotificationCenter.approvalIntent(ctx, ask, true), 11),
+                    )
+                    setOnClickPendingIntent(
+                        R.id.widget_recent,
+                        answer(ctx, NotificationCenter.approvalIntent(ctx, ask, false), 12),
+                    )
+                } else {
+                    setTextViewText(R.id.widget_new, "新会话")
+                    setTextViewText(R.id.widget_recent, "继续最近")
+                    setOnClickPendingIntent(
+                        R.id.widget_new,
+                        tap(ctx, MainActivity.ACTION_NEW_SESSION, 1),
+                    )
+                    setOnClickPendingIntent(
+                        R.id.widget_recent,
+                        tap(ctx, MainActivity.ACTION_RECENT_SESSION, 2),
+                    )
+                }
             }
+
+        private fun answer(ctx: Context, intent: Intent, code: Int): PendingIntent =
+            PendingIntent.getBroadcast(
+                ctx,
+                code,
+                intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
 
         private fun tap(ctx: Context, action: String, code: Int): PendingIntent {
             val i = Intent(ctx, MainActivity::class.java)
