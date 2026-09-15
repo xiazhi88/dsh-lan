@@ -8,8 +8,17 @@
 #
 # 它在宽屏 / 非触摸设备上不会激活（自己的媒体查询带 pointer: coarse），
 # 所以用桌面浏览器通过局域网访问不受影响。
+#
+# ── 为什么第二行的 id 是 dsh-lan-mobile 而不是 dsh-web-mobile ──
+#
+# 如果用户自己另外装过 dsh-web-mobile，它的 bundle 也会插一行。两行同 id 会让
+# 加载器直接报 "duplicate loader entry id" **整个 dsh web 起不来** —— 这不是
+# 可以忽略的小问题。换个 id 就绕开了。
+#
+# 代价是同一个模块被两行引用，实测**无害**：DSH 的客户端模块系统按 URL 去重，
+# 它的 apply 只跑一次（样式标签数是 1 不是 2）。宁可多一行无效果，也不要起不来。
 - insert:
     - id: dsh-lan
       name: dsh-lan
-    - id: dsh-web-mobile
+    - id: dsh-lan-mobile
       name: 'dsh-web-mobile'

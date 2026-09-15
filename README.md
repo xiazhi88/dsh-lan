@@ -75,6 +75,28 @@ dsh-lan: 局域网地址 http://192.168.1.100:3081  （上游 127.0.0.1:3080）
 
 端口被占用时（比如 `dsh-pocket` 还在跑）插件只会打一条警告，不影响 `dsh web` 本身。
 
+## 设置页签
+
+装上后 DSH 设置里会多一个一级入口 **「局域网访问」**（与「通用设置 / 模型 / 插件」同级）：
+
+![设置页签](https://raw.githubusercontent.com/xiazhi88/dsh-lan/main/docs/settings-tab.png)
+
+它展示：本机所有可用地址（点一下复制）、监听状态、以及「手机需在同一网络」的提醒。
+
+实现上是 DSH 客户端插件的一个 slot：
+
+```js
+ctx.slots.inject('settings.section', () =>
+  ctx.slots.register(
+    { name: 'settings.section', id: 'dsh-lan', order: 2, label: () => '局域网访问' },
+    LanSettings,
+  ),
+);
+```
+
+`client/client.js` 是**手写源码，没有构建步骤** —— 页面很简单，为它引入 esbuild
+不划算。数据直接来自下面的自描述端点（与页面同源，不需要额外开 RPC 通道）。
+
 ## 自描述端点
 
 ```
