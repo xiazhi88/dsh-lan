@@ -526,13 +526,14 @@ fun SettingsSheet(
                 shape = RoundedCornerShape(12.dp),
                 color = MaterialTheme.colorScheme.surfaceVariant,
             ) {
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .padding(14.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
+                // 必须自己套一层 Column：Surface 的内容按 Box 排布，直接放多个
+                // 子节点会**互相重叠**（诊断文字压在标题上，实测踩过）。
+                Column(Modifier.padding(14.dp)) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f)) {
                         Text(
                             "会话完成通知",
                             style = MaterialTheme.typography.bodyMedium,
@@ -603,7 +604,31 @@ fun SettingsSheet(
                             style = MaterialTheme.typography.labelSmall,
                             color = if (streamError != null) DshColor.Danger else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
+
+                        // 让用户能把完整诊断贴出来。截图会把长错误压成一行看不清，
+                        // 而这条信息正是定位问题唯一需要的东西。
+                        val clip = LocalClipboardManager.current
+                        var copied by remember { mutableStateOf(false) }
+                        TextButton(
+                            onClick = {
+                                clip.setText(AnnotatedString(
+                                    "dshgo 诊断\n" +
+                                        "入口地址：$url\n" +
+                                        "事件流：" + (if (streamLive) "已连接" else "未连接") + "\n" +
+                                        "断开原因：" + (streamError ?: "（无）") + "\n" +
+                                        "最近事件：" + (if (lastEventAt > 0) relativeTime(lastEventAt) else "从未收到"),
+                                ))
+                                copied = true
+                            },
+                            contentPadding = PaddingValues(horizontal = 8.dp),
+                        ) {
+                            Text(
+                                if (copied) "已复制，粘贴给我即可" else "复制诊断信息",
+                                style = MaterialTheme.typography.labelMedium,
+                            )
+                        }
                     }
+                }
                 }
             }
 
