@@ -10,11 +10,14 @@
 两者独立：App 也可以连你自己的隧道，插件也可以只给浏览器用。但配在一起是完整体验。
 
 <p align="center">
-  <img src="docs/tablet.jpg" alt="DSH Go 在平板上" width="620">
+  <img src="docs/phone.jpg" alt="DSH Go 在手机上" width="248">
+  &nbsp;&nbsp;&nbsp;
+  <img src="docs/tablet.jpg" alt="DSH Go 在平板上" width="404">
 </p>
 
-> 上图由生图模型基于实拍照片重绘（去背景、正视角）。屏幕里的文字是模型重画的，
-> 不是原始内容 —— 想要忠实还原的版本见 [`docs/tablet-faithful.jpg`](docs/tablet-faithful.jpg)。
+> 上图由生图模型基于实拍照片重绘（去背景、正视角）。**屏幕里的文字是模型重画的**，
+> 不是应用的真实界面内容 —— 想看忠实还原的版本见
+> [`docs/tablet-faithful.jpg`](docs/tablet-faithful.jpg)。
 
 ```
 ┌─────────┐        局域网 / Tailscale        ┌──────────────────────┐
