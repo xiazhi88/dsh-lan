@@ -117,7 +117,11 @@ object SessionWatcher {
 
                     override fun onDown(reason: String) {
                         _live.value = false
-                        _lastError.value = reason
+                        _lastError.value = buildString {
+                            append(reason)
+                            val extra = api?.lastCookieInfo
+                            if (!extra.isNullOrEmpty()) append("｜").append(extra)
+                        }
                         done.complete(Unit)
                     }
                 })

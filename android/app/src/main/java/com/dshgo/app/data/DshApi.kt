@@ -1,5 +1,6 @@
 package com.dshgo.app.data
 
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaType
@@ -52,6 +53,10 @@ class DshApi(private val baseUrlProvider: () -> String) {
         .build()
 
     private val base: String get() = baseUrlProvider().trimEnd('/')
+
+    /** 最近一次握手附带的 cookie 情况，写进诊断用（不参与逻辑）。 */
+    var lastCookieInfo: String = "（还没试过）"
+        private set
 
     // ------------------------------------------------------------------
     // 启动时的一次性快照
@@ -140,8 +145,24 @@ class DshApi(private val baseUrlProvider: () -> String) {
         val url = base.replaceFirst("http", "ws") + "/api/remote.mux"
         var clientId: String? = null
 
+        // 显式把会话 cookie 附上，不依赖 OkHttp 的 cookie jar。
+        //
+        // 为什么要显式：jar 读的是 WebView 的 CookieManager，而那条路径在产品里
+        // 出过一次问题 —— 握手被服务端掐断，客户端只看到 "unexpected end of stream"，
+        // 完全看不出是「没带 cookie 被 401 了」。显式取一次还有个好处：取到几条
+        // 能直接写进诊断，一眼就能分清是认证问题还是网络问题。
+        val jarCookies = runCatching {
+            WebViewCookies.loadForRequest(url.toHttpUrl())
+        }.getOrDefault(emptyList())
+        val cookieHeader = jarCookies.joinToString("; ") { "${it.name}=${it.value}" }
+        val authCount = jarCookies.count { it.name.startsWith("dsh-auth") }
+        lastCookieInfo = "cookie ${jarCookies.size} 条（其中 dsh-auth $authCount 条）"
+
+        val builder = Request.Builder().url(url)
+        if (cookieHeader.isNotEmpty()) builder.header("Cookie", cookieHeader)
+
         val ws = client.newWebSocket(
-            Request.Builder().url(url).build(),
+            builder.build(),
             object : WebSocketListener() {
 
                 override fun onOpen(webSocket: WebSocket, response: Response) {
