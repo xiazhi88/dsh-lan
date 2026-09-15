@@ -211,10 +211,16 @@ object SessionWatcher {
      * 事件，现在靠两次快照的差集。代价是最多 [POLL_MS] 的延迟。
      */
     private suspend fun pollTick(client: DshApi) {
-        val snap = runCatching { client.snapshot() }.getOrNull()
+        var failure: String? = null
+        val snap = runCatching { client.snapshot() }.onFailure {
+            failure = it.message?.take(80) ?: it.toString().take(80)
+        }.getOrNull()
         if (snap == null) {
             _live.value = false
             _mode.value = Mode.Down
+            // 轮询失败也要留下原因 —— 否则界面只显示「未连接」，无从判断是
+            // 认证问题、网络问题，还是这个接口在宿主上不存在。
+            _lastError.value = "轮询 session/list 失败：${failure ?: "未知"}"
             return
         }
         _live.value = true

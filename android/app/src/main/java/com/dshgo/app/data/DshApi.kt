@@ -151,12 +151,20 @@ class DshApi(private val baseUrlProvider: () -> String) {
         // 出过一次问题 —— 握手被服务端掐断，客户端只看到 "unexpected end of stream"，
         // 完全看不出是「没带 cookie 被 401 了」。显式取一次还有个好处：取到几条
         // 能直接写进诊断，一眼就能分清是认证问题还是网络问题。
+        // ★ 必须把 ws:// 换成 http:// 再解析：OkHttp 的 toHttpUrl() **不接受 ws 协议**，
+        // 直接传会抛异常。这里原来用 runCatching 包着，异常被吞成空列表，
+        // 表现为「cookie 0 条」—— 握手从来没带上会话 cookie，而日志上看不出原因。
+        val cookieUrl = url.replaceFirst("ws://", "http://").replaceFirst("wss://", "https://")
         val jarCookies = runCatching {
-            WebViewCookies.loadForRequest(url.toHttpUrl())
+            WebViewCookies.loadForRequest(cookieUrl.toHttpUrl())
+        }.onFailure {
+            lastCookieInfo = "读 cookie 失败：${it.message?.take(60)}"
         }.getOrDefault(emptyList())
         val cookieHeader = jarCookies.joinToString("; ") { "${it.name}=${it.value}" }
         val authCount = jarCookies.count { it.name.startsWith("dsh-auth") }
-        lastCookieInfo = "cookie ${jarCookies.size} 条（其中 dsh-auth $authCount 条）"
+        if (jarCookies.isNotEmpty()) {
+            lastCookieInfo = "cookie ${jarCookies.size} 条（其中 dsh-auth $authCount 条）"
+        }
 
         val builder = Request.Builder().url(url)
         if (cookieHeader.isNotEmpty()) builder.header("Cookie", cookieHeader)
