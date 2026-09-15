@@ -6017,7 +6017,7 @@ window.__ModuleLoader__.load({
      */
     const APP_APK_URL = 'https://github.com/xiazhi88/dshgo/releases/latest/download/dshgo-app.apk';
     const APP_RELEASES_URL = 'https://github.com/xiazhi88/dshgo/releases/latest';
-    const APP_VERSION = '3.6.0';
+    const APP_VERSION = '3.6.1';
 
     /**
      * 够宽才显示二维码。
@@ -6430,16 +6430,6 @@ window.__ModuleLoader__.load({
       //
       // 只挂这一次 —— 这正是内联的意义。之前靠补丁挂别人的插件行，市场热挂载时
       // 会挂第二遍，locale 冲突直接让 dsh web 起不来。
-      try {
-        const mobile = window.__dshgoVendorMobile(require);
-        if (mobile && typeof mobile.apply === 'function') {
-          ctx.plugin(mobile);
-        }
-      } catch (err) {
-        // 移动端适配挂了也要让设置页签能用 —— 它是我们的主功能
-        console.warn('[dshgo] 移动端适配加载失败：', err);
-      }
-
       // order 2：排在「通用设置」之后，紧挨同类的一级入口
       ctx.slots.inject('settings.section', () =>
         ctx.slots.register(
@@ -6452,6 +6442,31 @@ window.__ModuleLoader__.load({
           LanSettings,
         ),
       );
+
+      // ── 移动端适配（内联自 dsh-web-mobile，MIT）──
+      //
+      // 放在最后挂：万一它出问题，我们自己的设置页签已经注册好了。
+      //
+      // 用 apply(ctx) 而**不是** ctx.plugin(mobile)：后者会等 inject 里的服务
+      // 全部就绪，而这份适配是给新版 DSH 写的 —— 老版本上服务凑不齐就会一直等，
+      // 整个客户端卡在「Loading plugins...」（实测在 0.1.1-rc.2 上踩过）。
+      // 直接调 apply，缺东西当场抛错、被 catch 住，不会连累启动。
+      try {
+        const need = ['slots', 'locale'];
+        const missing = need.filter((name) => {
+          try { return typeof ctx.get !== 'function' || ctx.get(name) === undefined; }
+          catch { return true; }
+        });
+        if (missing.length > 0) {
+          console.warn('[dshgo] 跳过移动端适配，本机 DSH 缺少：', missing.join(', '));
+        } else {
+          const mobile = window.__dshgoVendorMobile(require);
+          if (mobile && typeof mobile.apply === 'function') mobile.apply(ctx);
+        }
+      } catch (err) {
+        // 移动端适配挂了不影响设置页签 —— 后者才是我们的主功能
+        console.warn('[dshgo] 移动端适配加载失败：', err);
+      }
     }
 
     module.exports = { name, inject, apply };
