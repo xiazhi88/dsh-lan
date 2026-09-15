@@ -180,11 +180,25 @@ class DshApi(private val baseUrlProvider: () -> String) {
                 }
 
                 override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
-                    sink.onDown(t.message ?: "连接中断")
+                    // 把状态码和响应体一起带上。只报 t.message 的话，握手被拒时
+                    // 往往只有一句泛泛的「Expected HTTP 101」，而真正的原因
+                    // （401 未授权 / 403 栅栏 / 404 路由不在）全在 status 和 body 里。
+                    val detail = buildString {
+                        append(t.message ?: "连接中断")
+                        if (response != null) {
+                            append("｜HTTP ").append(response.code)
+                            runCatching {
+                                response.body?.string()?.trim()?.take(160)?.let {
+                                    if (it.isNotEmpty()) append("｜").append(it)
+                                }
+                            }
+                        }
+                    }
+                    sink.onDown(detail)
                 }
 
                 override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
-                    sink.onDown("事件流已关闭")
+                    sink.onDown("事件流已关闭（code=$code${if (reason.isNotEmpty()) " $reason" else ""}）")
                 }
             },
         )

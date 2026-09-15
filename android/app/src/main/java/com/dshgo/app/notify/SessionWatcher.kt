@@ -68,6 +68,19 @@ object SessionWatcher {
     /** 当前在跑的会话。 */
     private val running = HashSet<String>()
 
+    /**
+     * 最近一次事件流断开的原因，null 表示没出过错。
+     *
+     * 为什么要暴露出来：以前断了只把状态点变灰，**具体原因哪儿都看不到** ——
+     * 用户只知道「没通知」，我只能猜。现在设置页直接显示。
+     */
+    private val _lastError = MutableStateFlow<String?>(null)
+    val lastError: StateFlow<String?> = _lastError.asStateFlow()
+
+    /** 最近收到会话事件的时间（0 = 一条都没收到过）。 */
+    private val _lastEventAt = MutableStateFlow(0L)
+    val lastEventAt: StateFlow<Long> = _lastEventAt.asStateFlow()
+
     @Synchronized
     fun start(context: Context, baseUrl: String) {
         if (loop?.isActive == true) return
@@ -94,14 +107,17 @@ object SessionWatcher {
                 stream = client.openEvents(object : DshApi.EventSink {
                     override fun onReady() {
                         _live.value = true
+                        _lastError.value = null
                     }
 
                     override fun onEmit(event: String, args: JSONArray) {
+                        _lastEventAt.value = System.currentTimeMillis()
                         handle(event, args)
                     }
 
                     override fun onDown(reason: String) {
                         _live.value = false
+                        _lastError.value = reason
                         done.complete(Unit)
                     }
                 })

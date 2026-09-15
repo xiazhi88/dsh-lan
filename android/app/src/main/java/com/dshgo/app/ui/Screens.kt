@@ -333,6 +333,12 @@ fun SettingsSheet(
     onToggleNotify: () -> Unit,
     /** 非 null 时说明通知现在有毛病（没授权 / 渠道被静音），直接显示给用户。 */
     notifyProblem: String?,
+    /** 事件流是否连着；通知全靠它。 */
+    streamLive: Boolean,
+    /** 最近一次断开的原因（null = 没出过错）。 */
+    streamError: String?,
+    /** 最近收到会话事件的时间，0 = 一条都没收到过。 */
+    lastEventAt: Long,
     onTestNotify: () -> Unit,
     onNotifySettings: () -> Unit,
     scale: Float,
@@ -565,6 +571,37 @@ fun SettingsSheet(
                             problem,
                             style = MaterialTheme.typography.labelSmall,
                             color = DshColor.Danger,
+                        )
+                    }
+
+                    // 事件流诊断。通知是从这条流里来的，它断了就什么都收不到 ——
+                    // 而以前断了只把状态点变灰，原因哪儿都看不到。
+                    Spacer(Modifier.height(10.dp))
+                    Column {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                Modifier
+                                    .size(7.dp)
+                                    .clip(CircleShape)
+                                    .background(if (streamLive) DshColor.Running else DshColor.TextFaintLight),
+                            )
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                if (streamLive) "事件流已连接" else "事件流未连接",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                        }
+                        val detail = when {
+                            streamError != null -> "上次断开：$streamError"
+                            streamLive && lastEventAt > 0 -> "最近一条会话事件：${relativeTime(lastEventAt)}"
+                            streamLive -> "已连接，还没收到过会话事件"
+                            else -> "正在重连…"
+                        }
+                        Text(
+                            detail,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (streamError != null) DshColor.Danger else MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
                 }
