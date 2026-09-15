@@ -359,6 +359,9 @@ fun SettingsSheet(
         Column(
             Modifier
                 .fillMaxWidth()
+                // 必须能滚：内容比一屏高时，ModalBottomSheet 会把超出的部分直接
+                // 裁掉，用户既看不到也滑不到（诊断块就这么够不着过）。
+                .verticalScroll(rememberScrollState())
                 .padding(start = 22.dp, end = 22.dp, bottom = 30.dp),
         ) {
             Text(
