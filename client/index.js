@@ -35,7 +35,7 @@ window.__ModuleLoader__.load({
      */
     const APP_APK_URL = 'https://github.com/xiazhi88/dshgo/releases/latest/download/dshgo-app.apk';
     const APP_RELEASES_URL = 'https://github.com/xiazhi88/dshgo/releases/latest';
-    const APP_VERSION = '3.6.2';
+    const APP_VERSION = '3.6.3';
 
     /**
      * 够宽才显示二维码。

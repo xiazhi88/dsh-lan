@@ -12,8 +12,8 @@ android {
         applicationId = "com.dshgo.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 13
-        versionName = "3.6.2"
+        versionCode = 14
+        versionName = "3.6.3"
     }
 
     buildFeatures {

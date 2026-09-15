@@ -220,7 +220,16 @@ object SessionWatcher {
             _mode.value = Mode.Down
             // 轮询失败也要留下原因 —— 否则界面只显示「未连接」，无从判断是
             // 认证问题、网络问题，还是这个接口在宿主上不存在。
-            _lastError.value = "轮询 session/list 失败：${failure ?: "未知"}"
+            val f = failure ?: "未知"
+            _lastError.value = if (f.contains("404")) {
+                // 404 = 这台 DSH 根本没有这个接口。0.1.1 那一代连
+                // dsh-api-session-controller 都还没有，session/* 的 RPC 端点
+                // 是后来才加的 —— 属于「服务端没提供」，不是能适配的差异。
+                "这台 DSH 太老了，没有 App 需要的接口（session/list 返回 404）。" +
+                    "升级 DSH 即可：npm i -g @deepseek-ai/dsh@latest"
+            } else {
+                "轮询 session/list 失败：$f"
+            }
             return
         }
         _live.value = true
