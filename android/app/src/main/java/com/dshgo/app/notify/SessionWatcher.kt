@@ -3,6 +3,7 @@ package com.dshgo.app.notify
 import kotlinx.coroutines.withTimeoutOrNull
 import android.content.Context
 import com.dshgo.app.data.DshApi
+import com.dshgo.app.notify.DshWidgetProvider
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -84,6 +85,10 @@ object SessionWatcher {
     /** 事件流当前连着的地址。地址一变就必须重开，见 [start]。 */
     private var currentUrl: String? = null
 
+    /** 给通知显示用的主机名。 */
+    private val currentHost: String
+        get() = currentUrl?.removePrefix("http://")?.removePrefix("https://")?.trimEnd('/') ?: "DSH"
+
     /**
      * 最近一次事件流断开的原因，null 表示没出过错。
      *
@@ -109,6 +114,51 @@ object SessionWatcher {
     val mode: StateFlow<Mode> = _mode.asStateFlow()
 
     enum class Mode { Stream, Poll, Down }
+
+    /**
+     * 常驻通知要显示的东西 —— "撇一眼手机能知道什么"。
+     *
+     * 数据全都来自事件流，本来就有；以前只是没展示出来。
+     */
+    data class Summary(
+        val running: Int = 0,
+        val approvals: Int = 0,
+        val lastDoneTitle: String? = null,
+        val lastDoneAt: Long = 0L,
+    ) {
+        fun title(): String = when {
+            approvals > 0 -> "$approvals 个操作等你批准"
+            running > 0 -> "$running 个会话在跑"
+            else -> "DSH 空闲"
+        }
+
+        fun detail(host: String): String = buildString {
+            if (running > 0) append("正在执行…")
+            if (lastDoneTitle != null && lastDoneAt > 0) {
+                if (isNotEmpty()) append(" · ")
+                append("刚完成「").append(lastDoneTitle.take(18)).append("」")
+            }
+            if (isEmpty()) append(host).append(" · 会话跑完会通知你")
+        }
+    }
+
+    /**
+     * 正在等用户点头的审批。
+     *
+     * 只收**退到后台之后**来的那些 —— 前台时页面自己会把审批处理掉，
+     * 原生这边抢答只会跟页面打架（两边都回执，谁生效看谁快，用户会看到
+     * "我明明点了允许"却什么也没发生）。
+     */
+    private val _approvals = MutableStateFlow<List<DshApi.ApprovalAsk>>(emptyList())
+    val approvals: StateFlow<List<DshApi.ApprovalAsk>> = _approvals.asStateFlow()
+
+    /** 常驻通知显示的内容。running / approvals / notices 任一变化都会重算。 */
+    val summary: StateFlow<Summary> get() = _summary
+    private val _summary = MutableStateFlow(Summary())
+
+    /** App 是否在前台。MainActivity 的 onResume/onPause 维护。 */
+    @Volatile
+    var appForeground: Boolean = true
 
     @Synchronized
     fun start(context: Context, baseUrl: String) {
@@ -170,6 +220,19 @@ object SessionWatcher {
                         _mode.value = Mode.Stream
                     }
 
+                    override fun onApproval(ask: DshApi.ApprovalAsk): Boolean {
+                        // 前台不接管：页面在处理，抢答会打架
+                        if (appForeground) return false
+                        synchronized(this@SessionWatcher) {
+                            if (_approvals.value.any { it.eventId == ask.eventId }) return true
+                            _approvals.value = _approvals.value + ask
+                        }
+                        _lastEventAt.value = System.currentTimeMillis()
+                        appContext?.let { NotificationCenter.postApproval(it, ask) }
+                        refreshSummary()
+                        return true
+                    }
+
                     override fun onEmit(event: String, args: JSONArray) {
                         _lastEventAt.value = System.currentTimeMillis()
                         handle(event, args)
@@ -204,6 +267,49 @@ object SessionWatcher {
         stream = null
         api = null
         _live.value = false
+    }
+
+    /**
+     * 替用户回答一条审批（从通知的动作按钮来）。
+     *
+     * 无论后端回执成不成功都要把它从待办里摘掉并撤掉通知 —— 否则会出现
+     * "点过了但通知还在"，用户会反复点。
+     */
+    fun answer(ask: DshApi.ApprovalAsk, allow: Boolean) {
+        synchronized(this) {
+            _approvals.value = _approvals.value.filterNot { it.eventId == ask.eventId }
+        }
+        appContext?.let { NotificationCenter.cancelApproval(it, ask) }
+        refreshSummary()
+        runCatching { api?.answerApproval(ask, allow) }
+    }
+
+    /** 把三处状态汇总成常驻通知要的一行字，并原地刷新通知。 */
+    private fun refreshSummary() {
+        val ctx = appContext ?: return
+        val s = synchronized(this) {
+            Summary(
+                running = running.size,
+                approvals = _approvals.value.size,
+                lastDoneTitle = _notices.value.firstOrNull { it.kind == Kind.Done }?.title,
+                lastDoneAt = _notices.value.firstOrNull { it.kind == Kind.Done }?.at ?: 0L,
+            )
+        }
+        if (_summary.value == s) return          // 没变就别刷，省电
+        _summary.value = s
+        NotificationCenter.updateForeground(ctx, currentHost, s)
+        // 桌面上放着小组件的话，一起刷新 —— 那是最常被瞟一眼的地方
+        DshWidgetProvider.update(ctx, s)
+    }
+
+    /** 退出前台时把已有审批挂进通知，进来时撤掉。 */
+    fun onForegroundChanged(foreground: Boolean) {
+        appForeground = foreground
+        val ctx = appContext ?: return
+        if (foreground) {
+            _approvals.value.forEach { NotificationCenter.cancelApproval(ctx, it) }
+            _approvals.value = emptyList()
+        }
     }
 
     fun markAllSeen() {
@@ -257,6 +363,7 @@ object SessionWatcher {
             gone
         }
         for (id in finished) push(id, Kind.Done, null)
+        refreshSummary()
     }
 
     private fun handle(event: String, args: JSONArray) {
@@ -277,6 +384,7 @@ object SessionWatcher {
                 if (!isRunning && wasRunning) {
                     push(sessionId, Kind.Done, null)
                 }
+                refreshSummary()
             }
 
             // (summary) —— 借机补标题

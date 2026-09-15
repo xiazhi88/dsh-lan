@@ -1,5 +1,16 @@
 package com.dshgo.app
 
+import java.io.File
+import com.dshgo.app.data.ShareInbox
+import com.dshgo.app.data.ComposerWriter
+import java.util.Locale
+import android.widget.Toast
+import android.speech.RecognizerIntent
+import com.dshgo.app.data.AddressPicker
+import android.util.Log
+import android.net.ConnectivityManager
+import kotlinx.coroutines.launch
+import androidx.lifecycle.lifecycleScope
 import com.dshgo.app.data.UpdateCheck
 import android.annotation.SuppressLint
 import android.content.Intent
@@ -83,6 +94,22 @@ import com.dshgo.app.ui.theme.DshTheme
  */
 class MainActivity : ComponentActivity() {
 
+    /**
+     * 快捷方式的 action 常量。
+     *
+     * 用 `internal` 而不是 `private`：主屏小组件的按钮要复用同一套 action ——
+     * 逻辑只写一份，在 MainActivity 里处理。
+     */
+    internal companion object {
+        const val TAG = "dshgo"
+
+        /** 与 res/xml/shortcuts.xml 里的 action 一一对应。 */
+        const val ACTION_NEW_SESSION = "com.dshgo.app.NEW_SESSION"
+        const val ACTION_RECENT_SESSION = "com.dshgo.app.RECENT_SESSION"
+        const val ACTION_OPEN_SETTINGS = "com.dshgo.app.OPEN_SETTINGS"
+    }
+
+
     private lateinit var prefs: Prefs
     private lateinit var webView: WebView
 
@@ -139,6 +166,18 @@ class MainActivity : ComponentActivity() {
      * 扫到就直接连，不再让用户点一次「连接」：二维码就是入口地址本身，
      * 扫的动作已经表达了「用这个」。
      */
+    /** 语音识别结果。见 [onVoice]。 */
+    private val voiceLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult(),
+    ) { result ->
+        if (result.resultCode != RESULT_OK) return@registerForActivityResult
+        val spoken = result.data
+            ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
+            ?.firstOrNull()
+            .orEmpty()
+        writeToComposer(spoken)
+    }
+
     private val scanLauncher = registerForActivityResult(
         com.journeyapps.barcodescanner.ScanContract(),
     ) { result ->
@@ -176,6 +215,12 @@ class MainActivity : ComponentActivity() {
     }
 
     // ------------------------------------------------------------------
+
+    override fun onResume() {
+        super.onResume()
+        // 回到前台：页面自己会处理审批，把挂起的撤掉，别让两条链路抢答
+        SessionWatcher.onForegroundChanged(true)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         // 统一 edge-to-edge。Android 15 起对 targetSdk 35 是强制的，旧版本上显式开启
@@ -223,6 +268,7 @@ class MainActivity : ComponentActivity() {
                     onTestNotify = ::onTestNotify,
                     onNotifySettings = ::onNotifySettings,
                     onScan = ::onScan,
+                    onVoice = ::onVoice,
                     updateLatest = ui.updateLatest,
                     updateNewer = ui.updateNewer,
                     updateChecking = ui.updateChecking,
@@ -254,19 +300,42 @@ class MainActivity : ComponentActivity() {
 
         // 后台查一次更新（内部有 24 小时节流，失败静默）
         checkUpdate()
+
+        // 已知地址不止一个时，看看现在这个还用不用得上
+        autoPickAddress()
+        watchNetwork()
+        maybeHandleShortcut(intent)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
+        maybeHandleShortcut(intent)
         maybeHandleShare(intent)
         consumeOpenSession(intent)
+    }
+
+    /**
+     * 长按图标的快捷方式。
+     *
+     * 「新会话」和「继续最近」都是往 DSH 页面里注入一次点击/localStorage，
+     * 而不是另开一个界面 —— 会话的选与开本来就是 DSH 自己的事，
+     * 我们只负责把他送到那个状态。
+     */
+    private fun maybeHandleShortcut(intent: Intent?) {
+        when (intent?.action) {
+            ACTION_NEW_SESSION -> handler.postDelayed({ clickNewSession() }, 600)
+            ACTION_RECENT_SESSION -> openMostRecentSession()
+            ACTION_OPEN_SETTINGS -> ui = ui.copy(settingsOpen = true)
+        }
     }
 
 
     override fun onPause() {
         super.onPause()
         CookieManager.getInstance().flush()
+        // 退到后台：审批改由原生接管（前台时页面自己会处理，抢答会打架）
+        SessionWatcher.onForegroundChanged(false)
     }
 
     override fun onDestroy() {
@@ -342,6 +411,7 @@ class MainActivity : ComponentActivity() {
                 pendingSessionId?.let { pending ->
                     pendingSessionId = null
                     view.evaluateJavascript(setCurrentSessionJs(pending), null)
+                    prefs.setLastSessionId(pending)
                     return
                 }
 
@@ -401,6 +471,23 @@ class MainActivity : ComponentActivity() {
                 // 上一次没回执就作废，否则页面的 input 会一直卡在「已打开」状态
                 filePathCallback?.onReceiveValue(null)
                 filePathCallback = callback
+
+                // 正好有一张从别的应用分享进来的图？直接把它交出去。
+                //
+                // 这是「分享进 DSH」的另一半：分享时图片已经落到私有目录，
+                // 用户回到 DSH 点「附件」就应该是把那张图发出去，而不是又弹一次
+                // 文件选择器让他重新找一遍。
+                ShareInbox.consumePendingImage(this@MainActivity)?.let { (file, name) ->
+                    // 必须叫这个名字，页面才会把它当图片附件处理
+                    val named = File(file.parentFile, name)
+                    runCatching { file.renameTo(named) }
+                    val target = if (named.exists()) named else file
+                    ShareInbox.clearPendingImage(this@MainActivity)
+                    filePathCallback = null
+                    callback.onReceiveValue(arrayOf(Uri.fromFile(target)))
+                    return true
+                }
+
                 return try {
                     fileChooser.launch(params.createIntent())
                     true
@@ -473,6 +560,9 @@ class MainActivity : ComponentActivity() {
         result.cookies.forEach { cm.setCookie(entry, it) }
         cm.flush()
 
+        // 握手成功 = 这个地址确实能用，记下来供以后自动选路
+        prefs.rememberUrl(entry)
+
         ui = ui.copy(
             screen = Screen.Dsh,
             connecting = false,
@@ -490,6 +580,9 @@ class MainActivity : ComponentActivity() {
 
         // 后台查一次更新（内部有 24 小时节流，失败静默）
         checkUpdate()
+
+        // 重新加载时顺手看看地址还用不用得上（不重复注册网络回调）
+        autoPickAddress()
 
         startLoadTimeout()
         webView.loadUrl(entry)
@@ -559,6 +652,7 @@ class MainActivity : ComponentActivity() {
         if (loaded) {
             // 页面已就绪：直接写 localStorage 再 reload
             webView.evaluateJavascript(setCurrentSessionJs(sessionId), null)
+            prefs.setLastSessionId(sessionId)   // 供「继续最近」用
         } else {
             // 冷启动还没载入 —— localStorage 要等 origin 就绪才写得进去
             pendingSessionId = sessionId
@@ -623,6 +717,83 @@ class MainActivity : ComponentActivity() {
         ui = ui.copy(
             notifyProblem = if (ok) null else "没能发出通知 —— 先看系统有没有给通知权限。",
         )
+    }
+
+    /**
+     * 语音输入：拉起系统识别界面，把结果写进 DSH 的输入框。
+     *
+     * 用 `ACTION_RECOGNIZE_SPEECH` 而不是自己录音：麦克风归识别器管，
+     * 所以**不需要 RECORD_AUDIO 权限**，也不用处理音频焦点、引擎缺失这些事。
+     */
+    private fun onVoice() {
+        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+            putExtra(
+                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM,
+            )
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
+            putExtra(RecognizerIntent.EXTRA_PROMPT, "说话，说完自动写进输入框")
+            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+        }
+        // 设备上没有任何识别器时别崩，明确告诉用户
+        if (intent.resolveActivity(packageManager) == null) {
+            toast("这台设备没有语音识别服务")
+            return
+        }
+        runCatching { voiceLauncher.launch(intent) }
+            .onFailure { toast("打不开语音识别：${it.message}") }
+    }
+
+    /** 把识别到的文字写进 DSH 的输入框。 */
+    private fun writeToComposer(text: String) {
+        if (text.isBlank()) return
+        webView.evaluateJavascript(ComposerWriter.writeJs(text)) { result ->
+            // JS 回的是带引号的字符串字面量
+            if (result != null && !result.contains("ok")) {
+                Log.w(TAG, "写入输入框失败：$result")
+                toast("没找到 DSH 的输入框，先把页面刷新一下")
+            }
+        }
+    }
+
+    private fun toast(msg: String) {
+        runCatching { Toast.makeText(this, msg, Toast.LENGTH_SHORT).show() }
+    }
+
+    /**
+     * 从已知地址里挑一个能用的。
+     *
+     * 规则刻意保守：**当前地址能用就什么都不做。** 只在它连不上时才切到最快的
+     * 可用地址 —— 用户可能正在输入，无端换地址（进而整页重载）比慢一点烦人得多。
+     *
+     * 全都探测失败时也什么都不做：那说明电脑那边没起来，改地址没用，
+     * 改错了反而更找不回来。
+     */
+    private fun autoPickAddress() {
+        val known = prefs.knownUrls()
+        if (known.size < 2) return
+        lifecycleScope.launch {
+            val reachable = AddressPicker.probeAll(known)
+            if (reachable.isEmpty()) return@launch
+            val current = prefs.entryUrl()
+            if (reachable.any { it.url == current }) return@launch   // 现在这个能用，不动
+            val best = reachable.first()
+            Log.i(TAG, "自动切换地址：$current → ${best.url}（${best.ms}ms，共 ${known.size} 个候选）")
+            connect(best.url)
+        }
+    }
+
+    /** 网络变化时重新探一遍 —— WiFi ↔ 蜂窝切换后原来的地址往往就不通了。 */
+    private fun watchNetwork() {
+        runCatching {
+            val cm = getSystemService(ConnectivityManager::class.java) ?: return
+            cm.registerDefaultNetworkCallback(object : ConnectivityManager.NetworkCallback() {
+                override fun onAvailable(network: android.net.Network) {
+                    // 系统刚切换网络，底层的地址很可能已经变了
+                    handler.postDelayed({ autoPickAddress() }, 1500)
+                }
+            })
+        }
     }
 
     /**
@@ -803,12 +974,76 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun maybeHandleShare(intent: Intent?) {
-        if (intent?.action != Intent.ACTION_SEND) return
-        val text = intent.getStringExtra(Intent.EXTRA_TEXT) ?: return
-        val match = Regex("https?://[^\\s\"'<>）)】]+").find(text) ?: return
-        val url = Prefs.normalize(match.value)
-        if (url.isEmpty()) return
-        connect(url)
+        if (intent?.action != Intent.ACTION_SEND &&
+            intent?.action != Intent.ACTION_SEND_MULTIPLE
+        ) {
+            return
+        }
+        when (ShareInbox.accept(this, intent)) {
+            ShareInbox.Kind.Image ->
+                // 图片先存着。等用户进 DSH 点「附件」，onShowFileChooser 会把它交出去 ——
+                // 比让他"先存到文件、再在 DSH 里翻出来"少好几步。
+                toast("图片已就绪 —— 回到 DSH 点「附件」就能发出去")
+
+            ShareInbox.Kind.Text -> {
+                val body = ShareInbox.consumePendingText(this) ?: return
+                // 只有在**看起来就是 DSH 入口地址**时才当成地址连过去。
+                // 判定刻意严：必须带显式端口、且后面不带路径。
+                // 否则分享一个普通链接（GitHub 页面之类）会被误当成地址，
+                // 把用户从当前会话里踢出去 —— 那正是分享内容进来时最不希望发生的事。
+                if (looksLikeEntryAddress(body)) connect(body.trim())
+                else writeToComposer(body)
+            }
+
+            null -> Unit
+        }
+    }
+
+    /** 点一下页面上的「新会话」。 */
+    private fun clickNewSession() {
+        webView.evaluateJavascript(
+            """(function(){
+              try {
+                var btns = Array.prototype.slice.call(document.querySelectorAll('button, [role="button"]'));
+                for (var i = 0; i < btns.length; i++) {
+                  var t = (btns[i].innerText || '').trim();
+                  if (t === '新会话' || t === 'New session' || t === 'New Session') {
+                    btns[i].click();
+                    return 'ok';
+                  }
+                }
+                return 'not-found';
+              } catch (e) { return 'error'; }
+            })();""",
+            null,
+        )
+    }
+
+    /** 直接跳到最近用过的那个会话。走的是 notification 那套 localStorage 机制。 */
+    private fun openMostRecentSession() {
+        val last = prefs.lastSessionId()
+        if (last.isNullOrEmpty()) {
+            toast("还没有用过的会话")
+            return
+        }
+        pendingSessionId = last
+        if (loaded) {
+            pendingSessionId = null
+            webView.evaluateJavascript(setCurrentSessionJs(last), null)
+            prefs.setLastSessionId(last)
+        }
+    }
+
+    /**
+     * 这个字符串看起来是不是一个 DSH 入口地址？
+     *
+     * 要求**同时**满足：有 scheme、有显式端口、路径为空或只有 `/`。
+     * 端口是关键 —— DSH 的转发层永远带端口，而普通网页链接通常没有。
+     */
+    private fun looksLikeEntryAddress(s: String): Boolean {
+        val t = s.trim().replace("\n", "").replace(" ", "")
+        if (!t.startsWith("http://") && !t.startsWith("https://")) return false
+        return Regex("^https?://[^/]+:\\d{2,5}/?$").matches(t)
     }
 }
 
@@ -874,6 +1109,7 @@ private fun Shell(
     onTestNotify: () -> Unit,
     onNotifySettings: () -> Unit,
     onScan: () -> Unit,
+    onVoice: () -> Unit,
     updateLatest: String?,
     updateNewer: Boolean,
     updateChecking: Boolean,
@@ -958,6 +1194,7 @@ private fun Shell(
                 onNotice = onOpenPanel,
                 onReload = onReload,
                 onSettings = onOpenSettings,
+                onVoice = onVoice,
                 modifier = Modifier.align(Alignment.TopCenter),
             )
 

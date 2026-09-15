@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  长按图标弹出的快捷方式。
+
+  这三件事是手机上最高频的入口：想开新会话、想回到刚才那个、想改地址。
+  都要先开 App 再点两下才能到，长按直接进能省掉那两下。
+-->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+    <shortcut
+        android:shortcutId="new_session"
+        android:enabled="true"
+        android:icon="@drawable/ic_notify"
+        android:shortcutShortLabel="@string/shortcut_new"
+        android:shortcutLongLabel="@string/shortcut_new_long">
+        <intent
+            android:action="com.dshgo.app.NEW_SESSION"
+            android:targetPackage="com.dshgo.app"
+            android:targetClass="com.dshgo.app.MainActivity" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="recent_session"
+        android:enabled="true"
+        android:icon="@drawable/ic_notify"
+        android:shortcutShortLabel="@string/shortcut_recent"
+        android:shortcutLongLabel="@string/shortcut_recent_long">
+        <intent
+            android:action="com.dshgo.app.RECENT_SESSION"
+            android:targetPackage="com.dshgo.app"
+            android:targetClass="com.dshgo.app.MainActivity" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="open_settings"
+        android:enabled="true"
+        android:icon="@drawable/ic_notify"
+        android:shortcutShortLabel="@string/shortcut_settings"
+        android:shortcutLongLabel="@string/shortcut_settings_long">
+        <intent
+            android:action="com.dshgo.app.OPEN_SETTINGS"
+            android:targetPackage="com.dshgo.app"
+            android:targetClass="com.dshgo.app.MainActivity" />
+    </shortcut>
+</shortcuts>

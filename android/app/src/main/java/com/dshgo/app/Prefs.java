@@ -18,6 +18,8 @@ public final class Prefs {
     private static final String KEY_NOTIFY = "notify_enabled";
     private static final String KEY_UPDATE_AT = "update_checked_at";
     private static final String KEY_UPDATE_LATEST = "update_latest";
+    private static final String KEY_KNOWN_URLS = "known_urls";
+    private static final String KEY_LAST_SESSION = "last_session";
 
     /** 界面缩放的取值范围与默认值。 */
     public static final float SCALE_MIN = 0.75f;
@@ -158,5 +160,59 @@ public final class Prefs {
 
     public void setLastKnownLatest(String v) {
         sp.edit().putString(KEY_UPDATE_LATEST, v).commit();
+    }
+
+    // ------------------------------------------------------------------
+    // 已知地址（多地址自动选路用）
+    // ------------------------------------------------------------------
+
+    /**
+     * 所有用过的入口地址，最近用的在前。
+     *
+     * 保留全部而不是只留一个：同一台电脑在不同网络下地址不同（家里局域网、
+     * 出门 Tailscale），两个都得记着才谈得上自动选路。
+     */
+    public java.util.List<String> knownUrls() {
+        String raw = sp.getString(KEY_KNOWN_URLS, "");
+        java.util.List<String> out = new java.util.ArrayList<>();
+        if (raw == null || raw.isEmpty()) return out;
+        for (String part : raw.split("\n")) {
+            String v = part.trim();
+            if (!v.isEmpty() && !out.contains(v)) out.add(v);
+        }
+        return out;
+    }
+
+    /** 记住一个地址（去重、置顶、最多留 8 个）。 */
+    public void rememberUrl(String url) {
+        String v = normalize(url);
+        if (v.isEmpty()) return;
+        java.util.List<String> list = knownUrls();
+        list.remove(v);
+        list.add(0, v);
+        while (list.size() > 8) list.remove(list.size() - 1);
+        sp.edit().putString(KEY_KNOWN_URLS, String.join("\n", list)).commit();
+    }
+
+    /** 忘掉一个地址（用户删掉某条时用）。 */
+    public void forgetUrl(String url) {
+        java.util.List<String> list = knownUrls();
+        list.remove(normalize(url));
+        sp.edit().putString(KEY_KNOWN_URLS, String.join("\n", list)).commit();
+    }
+
+    /**
+     * 最近打开过的会话 id。
+     *
+     * 只用于「继续最近」这个快捷方式 —— 不参与任何判断逻辑，所以允许过期
+     * （会话被删了、跳到不存在的 id，DSH 自己会处理）。
+     */
+    public String lastSessionId() {
+        return sp.getString(KEY_LAST_SESSION, null);
+    }
+
+    public void setLastSessionId(String v) {
+        if (v == null || v.isEmpty()) return;
+        sp.edit().putString(KEY_LAST_SESSION, v).commit();
     }
 }

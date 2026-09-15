@@ -129,6 +129,19 @@ class DshApi(private val baseUrlProvider: () -> String) {
     // 事件流
     // ------------------------------------------------------------------
 
+    /**
+     * 一条等待批准的请求。
+     *
+     * 字段名来自服务端：`approval/request` 的 request 带
+     * `{agent, toolName, callId?, reason?, signal?}`（见 `dsh-tools` 发起审批处）。
+     */
+    data class ApprovalAsk(
+        val clientId: String,
+        val eventId: String,
+        val toolName: String,
+        val reason: String?,
+    )
+
     interface EventSink {
         /** 通路建立。 */
         fun onReady()
@@ -137,6 +150,14 @@ class DshApi(private val baseUrlProvider: () -> String) {
         fun onEmit(event: String, args: JSONArray)
 
         /** 连接断开（重连由调用方负责）。 */
+        /**
+         * 收到一条审批请求，且**本端愿意接管**。
+         *
+         * 返回 true 表示已经接管 —— 调用方会挂起这条 waterfall 等用户决定；
+         * 返回 false 则立刻回 `next`，交回给网页那条链路。
+         */
+        fun onApproval(ask: ApprovalAsk): Boolean = false
+
         fun onDown(reason: String)
     }
 
@@ -200,10 +221,24 @@ class DshApi(private val baseUrlProvider: () -> String) {
                         }
 
                         "waterfall" -> {
-                            // 关键：立刻表态「不处理，继续」，否则宿主会一直等我们 → 卡住审批
                             val cid = clientId
                             val eventId = v.str("eventId")
-                            if (cid != null && eventId.isNotEmpty()) replyNext(cid, eventId)
+                            if (cid == null || eventId.isEmpty()) return@onMessage
+
+                            // 审批是唯一值得接管的一类 waterfall：手机上你人不在，
+                            // agent 卡在审批上就是纯浪费。其余一律立刻表态「不处理，继续」——
+                            // 不回执会让宿主的 waterfall 一直挂着，把网页那边的审批卡死。
+                            val ask = if (v.str("event") == "approval/request") {
+                                val req = v.optJSONObject("request")
+                                ApprovalAsk(
+                                    clientId = cid,
+                                    eventId = eventId,
+                                    toolName = req?.optString("toolName").orEmpty().ifEmpty { "操作" },
+                                    reason = req?.optString("reason")?.ifEmpty { null },
+                                )
+                            } else null
+
+                            if (ask == null || !sink.onApproval(ask)) replyNext(cid, eventId)
                         }
                     }
                 }
@@ -234,20 +269,44 @@ class DshApi(private val baseUrlProvider: () -> String) {
         return EventStream(ws)
     }
 
-    /** 回执 waterfall：「我不处理，链条继续」。绝不能占着主线程。 */
-    private fun replyNext(clientId: String, eventId: String) {
+    /**
+     * 回执 waterfall。
+     *
+     * 只有两种合法 outcome（服务端的 `parseRemoteEventResult` 就是这么校验的）：
+     *
+     * ```
+     * {kind:'next'}                          我不处理，链条继续
+     * {kind:'result', value:<任意 JSON>}     我处理了，结果是 value
+     * ```
+     *
+     * 审批的 value 取 `allowed-once` / `rejected`（见 `dsh-user-approval` 的
+     * `OUTCOMES`）。绝不能占着主线程。
+     */
+    private fun reply(cid: String, eventId: String, outcome: JSONObject) {
         Thread({
             runCatching {
                 unary(
                     "\$events/result",
                     JSONObject()
-                        .put("clientId", clientId)
+                        .put("clientId", cid)
                         .put("eventId", eventId)
-                        .put("outcome", JSONObject().put("kind", "next")),
+                        .put("outcome", outcome),
                 )
             }
         }, "dsh-event-reply").start()
     }
+
+    private fun replyNext(cid: String, eventId: String) =
+        reply(cid, eventId, JSONObject().put("kind", "next"))
+
+    /** 替用户回答一条审批。 */
+    fun answerApproval(ask: ApprovalAsk, allow: Boolean) = reply(
+        ask.clientId,
+        ask.eventId,
+        JSONObject()
+            .put("kind", "result")
+            .put("value", if (allow) "allowed-once" else "rejected"),
+    )
 
     class EventStream internal constructor(private val ws: WebSocket) {
         fun close() {

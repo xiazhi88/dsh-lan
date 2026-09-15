@@ -1,4 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">DSH Go</string>
+
+    <!-- 长按图标弹出的快捷方式 -->
+    <string name="shortcut_new">新会话</string>
+    <string name="shortcut_new_long">在 DSH 里开一个新会话</string>
+    <string name="shortcut_recent">继续最近</string>
+    <string name="shortcut_recent_long">回到最近用过的那个会话</string>
+    <string name="shortcut_settings">设置</string>
+    <string name="shortcut_settings_long">地址、缩放、通知</string>
+    <!-- 主屏小组件 -->
+    <string name="widget_description">一眼看 DSH 状态，一键开新会话</string>
+    <string name="widget_idle">DSH 空闲</string>
+    <string name="widget_hint">会话跑完会通知你</string>
+    <string name="widget_label">DSH Go 状态</string>
 </resources>

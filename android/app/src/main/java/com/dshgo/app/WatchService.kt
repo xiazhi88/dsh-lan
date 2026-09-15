@@ -26,7 +26,8 @@ import kotlinx.coroutines.cancel
 class WatchService : Service() {
 
     companion object {
-        private const val NOTIF_ID = 1001
+        /** 和 NotificationCenter.FOREGROUND_ID 必须是同一个值 —— 否则原地更新会变成新增一条。 */
+        private const val NOTIF_ID = NotificationCenter.FOREGROUND_ID
 
         /** 幂等启动；系统不允许时静默失败（比如从后台启动前台服务）。 */
         fun start(ctx: Context) {
@@ -50,7 +51,10 @@ class WatchService : Service() {
         }.getOrNull() ?: prefs.entryUrl()
 
         runCatching {
-            startForeground(NOTIF_ID, NotificationCenter.foreground(this, host))
+            startForeground(
+                NOTIF_ID,
+                NotificationCenter.foreground(this, host, SessionWatcher.summary.value),
+            )
         }
 
         // 系统可能在 Activity 不在时把服务拉起来，这里兜一次底

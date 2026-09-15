@@ -11,6 +11,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import com.dshgo.app.MainActivity
+import com.dshgo.app.data.DshApi
 import com.dshgo.app.R
 
 /**
@@ -40,6 +41,9 @@ object NotificationCenter {
 
     /** 测试通知用的固定 id，重复点只替换不堆积。 */
     private const val TEST_ID = 0x7E57
+
+    /** 与 WatchService.startForeground 用的是同一个 id，才能原地更新。 */
+    const val FOREGROUND_ID = 1001
 
     fun ensureChannels(ctx: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
@@ -176,7 +180,16 @@ object NotificationCenter {
     }
 
     /** 前台服务的常驻通知。 */
-    fun foreground(ctx: Context, host: String): android.app.Notification {
+    /**
+     * 常驻通知。
+     *
+     * 以前这里只写「正在监听会话」—— 信息量为零，用户撇一眼手机什么也没得到。
+     * 而事件流里的数据早就有了，白放着不用。现在它显示真正想瞄一眼的东西：
+     * **几个在跑、几个在等我点头、最近完成是什么**。
+     *
+     * 重要度仍然是 MIN：它是"瞥一眼"用的，不该发出声音或占地方。
+     */
+    fun foreground(ctx: Context, host: String, summary: SessionWatcher.Summary): android.app.Notification {
         ensureChannels(ctx)
         val intent = Intent(ctx, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP
@@ -189,11 +202,94 @@ object NotificationCenter {
         )
         return NotificationCompat.Builder(ctx, CHANNEL_WATCH)
             .setSmallIcon(R.drawable.ic_notify)
-            .setContentTitle("正在监听会话")
-            .setContentText("$host · 会话跑完会通知你")
+            .setContentTitle(summary.title())
+            .setContentText(summary.detail(host))
+            .setStyle(NotificationCompat.BigTextStyle().bigText(summary.detail(host)))
             .setContentIntent(pi)
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_MIN)
+            .setShowWhen(false)
             .build()
     }
+
+    /** 原地更新常驻通知（同一个 id，不新增一条）。 */
+    fun updateForeground(ctx: Context, host: String, summary: SessionWatcher.Summary) {
+        runCatching {
+            NotificationManagerCompat.from(ctx).notify(FOREGROUND_ID, foreground(ctx, host, summary))
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 审批通知：两个动作按钮，直接从通知栏回答
+    // ------------------------------------------------------------------
+
+    /** 动作的 Intent action —— 广播接收器按这个区分「允许」和「拒绝」。 */
+    const val ACTION_APPROVE = "com.dshgo.app.APPROVE"
+    const val ACTION_REJECT = "com.dshgo.app.REJECT"
+
+    /** 通知里带的审批标识，用于回执和撤销。 */
+    const val EXTRA_EVENT_ID = "eventId"
+    const val EXTRA_CLIENT_ID = "clientId"
+    const val EXTRA_TOOL = "tool"
+    const val EXTRA_REASON = "reason"
+
+    /**
+     * 一条审批请求。
+     *
+     * 用 HIGH 重要度 + 响铃震动：agent 正卡在这里等你，这是**唯一一个
+     * "不回答就真的白等"的场景**，比"会话完成"更该吵醒人。
+     */
+    fun postApproval(ctx: Context, ask: DshApi.ApprovalAsk) {
+        ensureChannels(ctx)
+        val id = approvalId(ask.eventId)
+
+        val open = Intent(ctx, MainActivity::class.java)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        val pi = PendingIntent.getActivity(
+            ctx, id, open,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+
+        fun action(action: String, label: String, code: Int): NotificationCompat.Action {
+            val i = Intent(ctx, ApprovalReceiver::class.java)
+                .setAction(action)
+                .putExtra(EXTRA_EVENT_ID, ask.eventId)
+                .putExtra(EXTRA_CLIENT_ID, ask.clientId)
+                .putExtra(EXTRA_TOOL, ask.toolName)
+                .putExtra(EXTRA_REASON, ask.reason)
+            val p = PendingIntent.getBroadcast(
+                ctx, id + code, i,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+            )
+            return NotificationCompat.Action.Builder(0, label, p).build()
+        }
+
+        val text = buildString {
+            append(ask.toolName)
+            ask.reason?.takeIf { it.isNotBlank() }?.let { append("：").append(it.take(120)) }
+        }
+
+        val n = NotificationCompat.Builder(ctx, CHANNEL_DONE)
+            .setSmallIcon(android.R.drawable.stat_sys_warning)
+            .setContentTitle("等待你的批准")
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .setAutoCancel(true)
+            .setOngoing(false)
+            .setContentIntent(pi)
+            .addAction(action(ACTION_APPROVE, "允许", 1))
+            .addAction(action(ACTION_REJECT, "拒绝", 2))
+            .build()
+
+        runCatching { NotificationManagerCompat.from(ctx).notify(id, n) }
+    }
+
+    fun cancelApproval(ctx: Context, ask: DshApi.ApprovalAsk) {
+        runCatching { NotificationManagerCompat.from(ctx).cancel(approvalId(ask.eventId)) }
+    }
+
+    /** 由 eventId 稳定派生通知 id —— 同一条审批重复推送不会堆出好几条。 */
+    private fun approvalId(eventId: String): Int = 0x2000_0000 or (eventId.hashCode() and 0x0FFF_FFFF)
 }

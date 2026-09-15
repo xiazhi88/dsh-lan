@@ -35,6 +35,22 @@
             android:exported="true"
             android:launchMode="singleTask"
             android:windowSoftInputMode="adjustResize">
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+
+            <!-- 从别的应用分享进来：图片暂存，等用户在 DSH 里点附件时直接交出去。
+                 文字不用另加过滤器 —— 下面已经有一个 text/plain 的。 -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
+            </intent-filter>
 
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
@@ -53,6 +69,30 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
-    </application>
+    
+        <!-- 审批通知的两个动作按钮。用广播而不是 Activity：点「允许」不该把
+             App 拉到前台 —— 用户的意图只是让 agent 继续跑。 -->
+        <receiver
+            android:name=".notify.ApprovalReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.dshgo.app.APPROVE" />
+                <action android:name="com.dshgo.app.REJECT" />
+            </intent-filter>
+        </receiver>
+
+        <!-- 主屏小组件：一眼看状态 + 两个动作 -->
+        <receiver
+            android:name=".notify.DshWidgetProvider"
+            android:exported="false"
+            android:label="@string/widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info" />
+        </receiver>
+</application>
 
 </manifest>

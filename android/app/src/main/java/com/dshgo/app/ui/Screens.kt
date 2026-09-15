@@ -1063,6 +1063,8 @@ fun DshStatusStrip(
     onNotice: () -> Unit,
     onReload: () -> Unit,
     onSettings: () -> Unit,
+    /** 语音输入：说话 → 写进 DSH 的输入框。 */
+    onVoice: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Surface(
@@ -1128,6 +1130,15 @@ fun DshStatusStrip(
                 }
             }
 
+            // 语音输入：手机上打字是最大的摩擦，而 prompt 恰恰适合用说的
+            IconButton(onClick = onVoice) {
+                Icon(
+                    DshIcons.Mic,
+                    contentDescription = "语音输入",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(21.dp),
+                )
+            }
             IconButton(onClick = onReload) {
                 Icon(
                     Icons.Rounded.Refresh,
