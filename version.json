@@ -1,0 +1,6 @@
+{
+  "version": "4.0.0",
+  "apk": "https://cdn.jsdelivr.net/gh/xiazhi88/dshgo@dist-v4.0.0/dshgo-app.apk",
+  "apkFallback": "https://github.com/xiazhi88/dshgo/releases/latest/download/dshgo-app.apk",
+  "notes": "审批通知可直接批准；语音输入；常驻状态；多地址选路；小组件；分享进 DSH；快捷方式"
+}
