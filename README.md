@@ -44,6 +44,24 @@ dsh plugin --profile web add dsh-web-mobile -w
 > `dsh plugin add` 会把声明了 `dsh.bundle` 的包自动加进 profile 的 `bundles`，
 > 所以你不用手改配置文件。
 
+### ⚠️ 装完必须重启 `dsh web`
+
+后端半（转发代理）只在**启动时**挂载，不会热生效。不重启的表现很有迷惑性：
+
+- `dsh web` 本身照常运行
+- 设置里**也会**多出「局域网访问」页签（前端半按已安装的包加载，与 bundle 层无关）
+- 但页签里只显示「**服务端半没有运行**」，终端里也没有 `dsh-lan:` 那两行
+
+这不是装失败，是没重启。重启后终端应该出现：
+
+```
+dsh-lan: 局域网地址 http://192.168.1.100:3081  （上游 127.0.0.1:3080）
+dsh-lan: 自描述端点 /__dsh_lan__/info（客户端可据此自动发现地址）
+```
+
+**一行都没有**，才是真的没进 `bundle` 层 —— 去看 profile 的 `package.json` 里
+`dsh.profile.bundles` 有没有 `dsh-lan`。
+
 ### 为什么不合成一个包
 
 试过，是错的，而且失败方式很严重。
