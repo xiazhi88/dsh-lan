@@ -46,6 +46,19 @@
     "lan",
     "proxy"
   ],
+  "author": "xiazhi88",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/xiazhi88/dshgo.git"
+  },
+  "homepage": "https://github.com/xiazhi88/dshgo#readme",
+  "bugs": {
+    "url": "https://github.com/xiazhi88/dshgo/issues"
+  },
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org/"
+  },
   "dsh": {
     "bundle": {
       "patch": "./cordis.patch.yml"
