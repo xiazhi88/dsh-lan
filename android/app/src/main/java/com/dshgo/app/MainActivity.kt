@@ -59,6 +59,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.dshgo.app.ui.ConnectingScreen
 import com.dshgo.app.ui.CrashDialog
 import com.dshgo.app.ui.DshLoadingOverlay
+import com.dshgo.app.ui.PageErrorOverlay
 import com.dshgo.app.ui.DshStatusStrip
 import com.dshgo.app.ui.Screen
 import com.dshgo.app.ui.SettingsSheet
@@ -318,6 +319,11 @@ class MainActivity : ComponentActivity() {
                 return runCatching { rewriteMainDocument(request.url) }.getOrNull()
             }
 
+            override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
+                // 新的一次导航，先把上一次的失败清掉
+                if (ui.pageError != null) ui = ui.copy(pageError = null)
+            }
+
             override fun onPageFinished(view: WebView, url: String) {
                 loaded = true
                 clearLoadTimeout()
@@ -331,7 +337,9 @@ class MainActivity : ComponentActivity() {
 
                 // 整页载入会把 html 的 zoom 冲掉，这里补回来
                 view.evaluateJavascript(scaleJs(prefs.scale()), null)
-                if (ui.screen == Screen.Dsh) {
+                // 加载失败时**不能**把 dshReady 置回 true —— Chrome 对错误页
+                // 同样会调 onPageFinished，置回去会把失败界面撤掉、露出原生错误页。
+                if (ui.screen == Screen.Dsh && ui.pageError == null) {
                     ui = ui.copy(dshReady = true, dshError = null)
                 }
             }
@@ -344,7 +352,11 @@ class MainActivity : ComponentActivity() {
                 if (!req.isForMainFrame) return
                 clearLoadTimeout()
                 if (ui.screen == Screen.Dsh) {
-                    ui = ui.copy(dshReady = false, dshError = err.description.toString())
+                    ui = ui.copy(
+                        dshReady = false,
+                        pageError = err.description.toString(),
+                        dshError = err.description.toString(),
+                    )
                 }
             }
 
@@ -356,6 +368,7 @@ class MainActivity : ComponentActivity() {
                 if (!req.isForMainFrame || res.statusCode < 400) return
                 clearLoadTimeout()
                 if (ui.screen == Screen.Dsh) {
+                    ui = ui.copy(pageError = "HTTP ${res.statusCode}")
                     ui = ui.copy(
                         dshReady = false,
                         dshError = when (res.statusCode) {
@@ -754,6 +767,14 @@ data class ShellState(
     val setupError: String? = null,
     val dshReady: Boolean = false,
     val dshError: String? = null,
+    /**
+     * 主文档加载失败的原因（null = 没问题）。
+     *
+     * 为什么不能只用 dshReady：Chrome 对**错误页也会调 onPageFinished**，
+     * 于是「错误 → dshReady=false → onPageFinished → dshReady=true」，
+     * 覆盖层刚出现就被撤掉，用户看到的是 WebView 的原生错误页。
+     */
+    val pageError: String? = null,
     val layout: String = Prefs.LAYOUT_AUTO,
     val scale: Float = Prefs.SCALE_DEFAULT,
     val awake: Boolean = false,
@@ -836,7 +857,18 @@ private fun Shell(
                 onCancel = if (state.dshReady) onCancelSetup else null,
             )
 
-            Screen.Dsh -> if (!state.dshReady) {
+            Screen.Dsh -> if (state.pageError != null) {
+                // 加载失败：给一个说人话的界面，而不是 WebView 的原生错误页
+                PageErrorOverlay(
+                    host = hostOf(state.entryUrl),
+                    url = state.entryUrl,
+                    detail = state.pageError,
+                    onRetry = onReload,
+                    onEditUrl = onChangeUrl,
+                    onSettings = onOpenSettings,
+                    modifier = Modifier.padding(top = stripTotal),
+                )
+            } else if (!state.dshReady) {
                 DshLoadingOverlay(
                     host = hostOf(state.entryUrl),
                     error = state.dshError,

@@ -1059,3 +1059,168 @@ fun DshStatusStrip(
         }
     }
 }
+
+/**
+ * 主文档加载失败时的界面。
+ *
+ * 为什么自己做而不用 WebView 的原生错误页：那一页只有一句
+ * `net::ERR_CONNECTION_REFUSED`，对用户毫无指导意义 —— 他不知道该去开 dsh web、
+ * 还是该改地址、还是该检查是不是同一个网络。
+ *
+ * 这里做两件事：**把错误翻成人话**，以及**给出下一步动作**。
+ */
+@Composable
+fun PageErrorOverlay(
+    host: String,
+    url: String,
+    detail: String,
+    onRetry: () -> Unit,
+    onEditUrl: () -> Unit,
+    onSettings: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier.fillMaxSize(),
+        color = MaterialTheme.colorScheme.background,
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 26.dp, vertical = 30.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            Spacer(Modifier.height(24.dp))
+
+            Box(
+                Modifier
+                    .size(56.dp)
+                    .clip(CircleShape)
+                    .background(DshColor.DangerSoft),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    imageVector = Icons.Rounded.Warning,
+                    contentDescription = null,
+                    modifier = Modifier.size(28.dp),
+                    tint = DshColor.Danger,
+                )
+            }
+
+            Spacer(Modifier.height(18.dp))
+
+            Text(
+                "连不上 $host",
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+
+            Spacer(Modifier.height(10.dp))
+
+            Text(
+                explainLoadFailure(detail),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+
+            Spacer(Modifier.height(24.dp))
+
+            // 逐条排查。顺序按「最常见的先查」排 —— 电脑上 dsh web 停了是最常见的原因。
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(14.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+            ) {
+                Column(Modifier.padding(16.dp)) {
+                    Text(
+                        "按顺序查一遍",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Spacer(Modifier.height(10.dp))
+                    listOf(
+                        "电脑上的 dsh web 还在运行吗？关掉那个终端窗口它就停了。",
+                        "dshgo 插件装了吗、装完重启过 dsh web 吗？",
+                        "手机和电脑在同一个 WiFi（或同一个 Tailscale 网络）吗？",
+                        "地址对吗？电脑上「设置 → 局域网访问」里能一键复制。",
+                    ).forEachIndexed { i, line ->
+                        Row(Modifier.padding(vertical = 4.dp)) {
+                            Text(
+                                "${i + 1}",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.width(18.dp),
+                            )
+                            Text(
+                                line,
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(20.dp))
+
+            Button(
+                onClick = onRetry,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(48.dp),
+                shape = RoundedCornerShape(14.dp),
+            ) {
+                Text("重试", style = MaterialTheme.typography.labelLarge)
+            }
+
+            Spacer(Modifier.height(10.dp))
+
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                OutlinedButton(
+                    onClick = onEditUrl,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(14.dp),
+                ) {
+                    Text("改地址", style = MaterialTheme.typography.labelMedium)
+                }
+                OutlinedButton(
+                    onClick = onSettings,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(14.dp),
+                ) {
+                    Text("设置", style = MaterialTheme.typography.labelMedium)
+                }
+            }
+
+            Spacer(Modifier.height(18.dp))
+
+            // 原始错误留在最后：普通用户用不上，但排查时是唯一线索
+            Text(
+                "$url\n$detail",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+/** 把 WebView 的错误码翻成人话。 */
+private fun explainLoadFailure(detail: String): String = when {
+    detail.contains("CONNECTION_REFUSED", ignoreCase = true) ->
+        "电脑拒绝了这个连接 —— 最常见的原因是 dsh web 没在运行，或者 dshgo 插件没装上（装完要重启 dsh web）。"
+    detail.contains("TIMED_OUT", ignoreCase = true) ||
+        detail.contains("ADDRESS_UNREACHABLE", ignoreCase = true) ||
+        detail.contains("HOST_LOOKUP", ignoreCase = true) ->
+        "连不上这台电脑 —— 手机和它不在同一个网络，或者地址填错了。"
+    detail.contains("NAME_NOT_RESOLVED", ignoreCase = true) ->
+        "这个地址解析不了 —— 地址可能写错了，请对照电脑上显示的那一串。"
+    detail.contains("CLEARTEXT", ignoreCase = true) ->
+        "系统拦截了明文 HTTP 请求。这不该发生，麻烦反馈一下。"
+    detail.startsWith("HTTP 4") ->
+        "服务器返回了 $detail —— 多半是登录凭据失效了，点「重试」会重新握手。"
+    detail.startsWith("HTTP 5") ->
+        "服务器返回了 $detail —— 转发层或 dsh web 那边出了状况。"
+    else -> "页面没能加载。"
+}
