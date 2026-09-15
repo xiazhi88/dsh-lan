@@ -1,0 +1,15 @@
+# dsh-lan bundle patch —— 一个包带两件事：
+#
+#   1. dsh-lan         网络桥：把只监听 127.0.0.1 的 dsh web 暴露到局域网
+#   2. dsh-web-mobile  移动端适配（MIT，作者 mexiaosqwq）：抽屉布局、移动端 CSS、触控优化
+#
+# 第二条是**依赖**不是 vendored 代码 —— dsh-web-mobile 在 npm 上独立维护，
+# 这里只是把它一起挂进来，用户装一个包就够了。
+#
+# 它在宽屏 / 非触摸设备上不会激活（自己的媒体查询带 pointer: coarse），
+# 所以用桌面浏览器通过局域网访问不受影响。
+- insert:
+    - id: dsh-lan
+      name: dsh-lan
+    - id: dsh-web-mobile
+      name: 'dsh-web-mobile'
