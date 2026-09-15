@@ -287,7 +287,13 @@ window.__ModuleLoader__.load({
             ? h('div', { style: styles.muted }, L('读取中…', 'Loading…'))
             : null,
 
-          !error && info && all.length === 0
+          !error && info && all.length === 0 && info.listening === false
+            ? h('div', { style: { ...styles.muted, color: C.err } },
+                L('转发端口没起来 —— 服务端半在跑，但没能监听任何端口（启动日志里会有 dsh-lan: 监听失败 那一行）。',
+                  'The forward port is not up — the host half runs but could not bind any port (look for the dsh-lan: line in the boot log).'))
+            : null,
+
+          !error && info && all.length === 0 && info.listening !== false
             ? h('div', { style: styles.muted },
                 L('没有找到非回环网卡 —— 检查电脑的网络连接。',
                   'No non-loopback interface found — check the network connection.'))
@@ -307,7 +313,9 @@ window.__ModuleLoader__.load({
               style: { ...styles.dot, background: (info && !error) ? C.ok : C.err },
             }),
             (info && !error)
-              ? L('正在监听 :', 'Listening on :') + String(info.port)
+              ? (info.listening === false
+                  ? L('转发端口未监听', 'Forward port not listening')
+                  : L('正在监听 :', 'Listening on :') + String(info.port))
               : (error ? L('服务端半未运行', 'Host half not running') : L('读取中…', 'Loading…')),
           ),
           h('div', { style: styles.muted },

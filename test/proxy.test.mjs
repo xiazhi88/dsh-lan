@@ -14,6 +14,7 @@ import { once } from 'node:events';
 
 import {
   createLanProxy,
+  buildInfoPayload,
   injectPolyfill,
   isTailscaleAddress,
   INJECT_MARK,
@@ -244,7 +245,7 @@ test('WebSocket upgrade 穿透', async (t) => {
   assert.equal(up.seen.at(-1).host, `127.0.0.1:${up.port}`, 'upgrade 也要改写 Host');
 });
 
-test('自描述端点不转发，直接答', async (t) => {
+test('自描述端点转发给上游，由 web server 路由来答', async (t) => {
   const up = await startFakeDsh();
   const proxy = createLanProxy({
     port: 0,
@@ -255,18 +256,18 @@ test('自描述端点不转发，直接答', async (t) => {
   const addr = await proxy.listen();
   t.after(async () => {
     await proxy.close();
-    // keep-alive / WS 会把 close 卡住，必须强制断开
     up.server.closeAllConnections?.();
     up.server.close();
   });
 
   const before = up.seen.length;
-  const res = await fetchThrough(addr.port, INFO_PATH, { host: '192.168.1.50:3081' });
-  assert.equal(res.status, 200);
-  const info = JSON.parse(res.body);
-  assert.equal(info.name, 'dsh-lan');
-  assert.ok(Array.isArray(info.addresses));
-  assert.equal(up.seen.length, before, '不该打到上游');
+  await fetchThrough(addr.port, INFO_PATH, { host: '192.168.1.50:3081' });
+
+  // 关键：必须打到上游。早期版本由代理自己答，于是「本机直连 3080」这条路上
+  // 端点根本不存在 —— 设置页只能显示一句含糊的「未在监听」。
+  assert.equal(up.seen.length, before + 1, '应转发给上游，而不是自己答');
+  assert.equal(up.seen.at(-1).url, INFO_PATH, '转发的就是那个路径');
+  assert.equal(up.seen.at(-1).host, `127.0.0.1:${up.port}`, 'Host 照常改写成 loopback');
 });
 
 test('Tailscale 地址识别（100.64.0.0/10）', () => {
@@ -278,29 +279,27 @@ test('Tailscale 地址识别（100.64.0.0/10）', () => {
   for (const ip of no) assert.equal(isTailscaleAddress(ip), false, `${ip} 不应判为 Tailscale`);
 });
 
-test('自描述端点把 Tailscale 地址单独列出', async (t) => {
-  const up = await startFakeDsh();
-  const proxy = createLanProxy({
-    port: 0,
-    bind: '127.0.0.1',
-    upstream: { host: '127.0.0.1', port: up.port },
-    launchToken: () => '',
-  });
-  const addr = await proxy.listen();
-  t.after(async () => {
-    await proxy.close();
-    up.server.closeAllConnections?.();
-    up.server.close();
-  });
+test('端点响应体：区分「代理在跑」和「代理没跑」', () => {
+  const nets = [
+    { name: 'en0', address: '192.168.0.21' },
+    { name: 'utun3', address: '100.100.190.107' },
+  ];
 
-  const res = await fetchThrough(addr.port, INFO_PATH, { host: '192.168.1.50:3081' });
-  const info = JSON.parse(res.body);
+  const up = buildInfoPayload({ port: 3081, upstreamPort: 3080 }, nets);
+  assert.equal(up.listening, true);
+  assert.equal(up.port, 3081);
+  assert.equal(up.upstreamPort, 3080);
+  assert.deepEqual(up.addresses, [
+    'http://192.168.0.21:3081',
+    'http://100.100.190.107:3081',
+  ]);
+  assert.deepEqual(up.tailscale, ['http://100.100.190.107:3081'], 'Tailscale 单独一组');
+  for (const url of up.tailscale) assert.ok(up.addresses.includes(url), '且是 addresses 的子集');
 
-  assert.ok(Array.isArray(info.addresses), 'addresses 保持数组，向后兼容');
-  assert.ok(Array.isArray(info.tailscale), 'tailscale 单独一组');
-  assert.equal(typeof info.port, 'number');
-  // 这台机器未必有 Tailscale，所以只断言「tailscale 是 addresses 的子集」
-  for (const url of info.tailscale) {
-    assert.ok(info.addresses.includes(url), `${url} 应在 addresses 里`);
-  }
+  // 代理没在跑时必须说清楚 —— 前端据此区分「没起来」和「读不到端点」
+  const down = buildInfoPayload({ port: null, upstreamPort: 3080 }, nets);
+  assert.equal(down.listening, false);
+  assert.equal(down.port, null);
+  assert.deepEqual(down.addresses, [], '没监听就不该报地址');
+  assert.deepEqual(down.tailscale, []);
 });
