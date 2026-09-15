@@ -62,8 +62,8 @@
     }
   },
   "dshgo": {
-    "appVersion": "4.0.9",
-    "appApk": "https://cdn.jsdelivr.net/gh/xiazhi88/dshgo@dist-v4.0.9/dshgo-app.apk",
+    "appVersion": "4.1.0",
+    "appApk": "https://cdn.jsdelivr.net/gh/xiazhi88/dshgo@dist-v4.1.0/dshgo-app.apk",
     "appApkFallback": "https://github.com/xiazhi88/dshgo/releases/latest/download/dshgo-app.apk"
   }
 }
