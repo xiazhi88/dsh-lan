@@ -2,5 +2,5 @@
   "version": "4.1.0",
   "apk": "https://cdn.jsdelivr.net/gh/xiazhi88/dshgo@dist-v4.1.0/dshgo-app.apk",
   "apkFallback": "https://github.com/xiazhi88/dshgo/releases/latest/download/dshgo-app.apk",
-  "notes": "应用内下载：进度条 + 直接唤起安装器；修下载卡住与选错源"
+  "notes": "\u5e94\u7528\u5185\u4e0b\u8f7d\uff1a\u8fdb\u5ea6\u6761 + \u76f4\u63a5\u5524\u8d77\u5b89\u88c5\u5668\uff1b\u4fee\u4e0b\u8f7d\u5361\u4f4f\u4e0e\u9009\u9519\u6e90"
 }
