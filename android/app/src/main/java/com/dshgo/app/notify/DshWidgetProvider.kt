@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.widget.RemoteViews
 import com.dshgo.app.MainActivity
+import com.dshgo.app.Prefs
 import com.dshgo.app.R
 
 /**
@@ -32,6 +33,11 @@ class DshWidgetProvider : AppWidgetProvider() {
     override fun onUpdate(ctx: Context, manager: AppWidgetManager, ids: IntArray) {
         val views = buildViews(ctx, SessionWatcher.summary.value)
         ids.forEach { manager.updateAppWidget(it, views) }
+
+        // 小组件刚被放到桌面（或系统周期性刷新）时，确保状态是活的。
+        // 用户可能刚重装、刚重启，SessionWatcher 还没起来 —— 那样卡片会一直
+        // 显示「DSH 空闲」，而它明明有会话在跑。
+        if (Prefs(ctx).notifyEnabled()) SessionWatcher.ensureRunning(ctx)
     }
 
     companion object {

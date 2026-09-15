@@ -1,5 +1,6 @@
 package com.dshgo.app.notify
 
+import com.dshgo.app.Prefs
 import kotlinx.coroutines.withTimeoutOrNull
 import android.content.Context
 import com.dshgo.app.data.DshApi
@@ -63,6 +64,9 @@ object SessionWatcher {
     /** 轮询间隔。通知不比聊天，3 秒的延迟完全可接受。 */
     private const val POLL_MS = 3000L
 
+    /** 收到会话事件后等这么久再校准 —— 一轮 turn 会连发好几个事件，逐個拉列表太浪费。 */
+    private const val RESYNC_DEBOUNCE_MS = 1500L
+
     /** 轮询模式下每这么多次回头试一次 WS（× POLL_MS ≈ 1 分钟）。 */
     private const val WS_RETRY_EVERY = 20
 
@@ -81,6 +85,9 @@ object SessionWatcher {
 
     /** 当前在跑的会话。 */
     private val running = HashSet<String>()
+
+    /** 校准任务（去抖后用）。 */
+    private var resyncJob: Job? = null
 
     /** 事件流当前连着的地址。地址一变就必须重开，见 [start]。 */
     private var currentUrl: String? = null
@@ -204,6 +211,12 @@ object SessionWatcher {
                     running.clear()
                     running.addAll(snap.running)
                 }
+                // ★ 必须刷新，否则这次基线等于白拿。
+                //
+                // 实测踩过：App 启动时那个会话已经在跑了，基线把它记进 running，
+                // 但没有重算 summary —— 于是小组件一直显示默认值「DSH 空闲」，
+                // 而一轮 turn 中间不会再发 api-session/status，整个 turn 卡片都是错的。
+                refreshSummary()
             }
 
             var wsFailures = 0
@@ -250,6 +263,14 @@ object SessionWatcher {
                     override fun onEmit(event: String, args: JSONArray) {
                         _lastEventAt.value = System.currentTimeMillis()
                         handle(event, args)
+                        // 会话事件之后校准一次 running 集合（去抖：一轮 turn 会连发好几个事件）
+                        if (event.startsWith("api-session/")) {
+                            resyncJob?.cancel()
+                            resyncJob = scope.launch {
+                                delay(RESYNC_DEBOUNCE_MS)
+                                resync(client)
+                            }
+                        }
                     }
 
                     override fun onDown(reason: String) {
@@ -327,6 +348,13 @@ object SessionWatcher {
         }
     }
 
+    /** 确保监听在跑（小组件刷新时用；已经在跑就是空操作）。 */
+    fun ensureRunning(ctx: Context) {
+        val url = currentUrl ?: Prefs(ctx).entryUrl()
+        if (url.isEmpty()) return
+        start(ctx, url)
+    }
+
     fun markAllSeen() {
         _unseen.value = 0
         save()
@@ -339,6 +367,29 @@ object SessionWatcher {
     }
 
     // ------------------------------------------------------------------
+
+    /**
+     * 用 `session/list` **校准** `running` 集合。
+     *
+     * 为什么不只依赖 `api-session/status` 事件：那个事件的参数形状我是从压缩过的
+     * 产物里推的，而实测中「有会话在跑、卡片却显示空闲」—— 说明靠不住。
+     * `session/list` 的 `running` 字段是权威数据（App 本来就用它拿启动快照），
+     * 用它校准，事件流只负责「尽快知道（跑完了）」这件事。
+     *
+     * 这是**校准**不是替换：差集照样会触发完成通知，语义与轮询模式一致。
+     */
+    private suspend fun resync(client: DshApi) {
+        val snap = runCatching { client.snapshot() }.getOrNull() ?: return
+        val finished = synchronized(this) {
+            titles.putAll(snap.titles)
+            val gone = running.filter { it !in snap.running }
+            running.clear()
+            running.addAll(snap.running)
+            gone
+        }
+        for (id in finished) push(id, Kind.Done, null)
+        refreshSummary()
+    }
 
     /**
      * 轮询一次会话列表，靠 `running` 集合的变化判断「跑完了」。

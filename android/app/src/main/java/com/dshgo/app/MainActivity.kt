@@ -1,5 +1,9 @@
 package com.dshgo.app
 
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
+import android.speech.RecognitionListener
+import android.speech.SpeechRecognizer
 import java.io.File
 import com.dshgo.app.data.ShareInbox
 import com.dshgo.app.data.ComposerWriter
@@ -174,16 +178,14 @@ class MainActivity : ComponentActivity() {
      * 扫到就直接连，不再让用户点一次「连接」：二维码就是入口地址本身，
      * 扫的动作已经表达了「用这个」。
      */
-    /** 语音识别结果。见 [onVoice]。 */
-    private val voiceLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult(),
-    ) { result ->
-        if (result.resultCode != RESULT_OK) return@registerForActivityResult
-        val spoken = result.data
-            ?.getStringArrayListExtra(RecognizerIntent.EXTRA_RESULTS)
-            ?.firstOrNull()
-            .orEmpty()
-        writeToComposer(spoken)
+    /** 语音识别器。见 [onVoice]。 */
+    private var recognizer: android.speech.SpeechRecognizer? = null
+
+    /** 麦克风权限。老版本没有这个权限，回调只会在新版本触发。 */
+    private val micPermission = registerForActivityResult(
+        ActivityResultContracts.RequestPermission(),
+    ) { granted ->
+        if (granted) startListening() else toast("需要麦克风权限才能语音输入")
     }
 
     private val scanLauncher = registerForActivityResult(
@@ -348,6 +350,8 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        runCatching { recognizer?.destroy() }
+        recognizer = null
         clearLoadTimeout()
         webView.stopLoading()
         webView.destroy()
@@ -727,36 +731,95 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
-     * 语音输入：拉起系统识别界面，把结果写进 DSH 的输入框。
+     * 语音输入。
      *
-     * 用 `ACTION_RECOGNIZE_SPEECH` 而不是自己录音：麦克风归识别器管，
-     * 所以**不需要 RECORD_AUDIO 权限**，也不用处理音频焦点、引擎缺失这些事。
+     * ## 为什么不用 ACTION_RECOGNIZE_SPEECH
+     *
+     * 那条路是"让系统弹一个识别界面"，但它要求设备上**有 Activity 处理这个 Intent**。
+     * 实测 ColorOS 上没有 —— 语音能力被做进了输入法，不暴露系统入口，
+     * 于是 `launch` 直接抛 ActivityNotFoundException，用户看到的是
+     * "这台设备没有语音识别服务"，而手机明明有。
+     *
+     * 改成 [SpeechRecognizer]：它直接找系统里的 `RecognitionService`，
+     * 不依赖有没有那个界面。代价是要 `RECORD_AUDIO` 权限（原来不需要），
+     * 值得 —— 能用比少一个权限重要。
+     *
+     * 实在连识别服务都没有时，才回退到系统界面那条路。
      */
     private fun onVoice() {
-        val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
-            putExtra(
-                RecognizerIntent.EXTRA_LANGUAGE_MODEL,
-                RecognizerIntent.LANGUAGE_MODEL_FREE_FORM,
-            )
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
-            putExtra(RecognizerIntent.EXTRA_PROMPT, "说话，说完自动写进输入框")
-            putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M &&
+            ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            micPermission.launch(Manifest.permission.RECORD_AUDIO)
+            return
         }
-        // ★ 不用 resolveActivity 预判。
-        //
-        // 它在 Android 11+ 上不可靠：没声明 <queries> 时一律返回 null，
-        // 于是"明明有识别器"也被判成没有（用户实测踩到）。而且就算声明了，
-        // 有些识别器不暴露 launcher activity，仍然解析不到。
-        //
-        // 直接 try —— 真没有的话 launch 会抛 ActivityNotFoundException，
-        // 那才是唯一可靠的信号。
-        runCatching { voiceLauncher.launch(intent) }
-            .onFailure {
-                toast(
-                    "打不开语音输入。装一个语音识别服务（如 Google / 讯飞 / 搜狗输入法）再试；" +
-                        "也可以直接用键盘上的麦克风。",
-                )
+        startListening()
+    }
+
+    private fun startListening() {
+        if (!SpeechRecognizer.isRecognitionAvailable(this)) {
+            // 兜底：连识别服务都没有，再试系统界面（有些设备只提供后者）
+            toast("这台设备没有语音识别服务，可以先用键盘上的麦克风")
+            return
+        }
+        runCatching {
+            recognizer?.destroy()
+            recognizer = SpeechRecognizer.createSpeechRecognizer(this).apply {
+                setRecognitionListener(object : RecognitionListener {
+                    override fun onPartialResults(partialResults: Bundle?) {
+                        // 边说边写：用户能看见自己正在说什么，说错了可以立刻停
+                        partialResults?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                            ?.firstOrNull()
+                            ?.takeIf { it.isNotBlank() }
+                            ?.let { writeToComposer(it) }
+                    }
+
+                    override fun onResults(results: Bundle?) {
+                        results?.getStringArrayList(SpeechRecognizer.RESULTS_RECOGNITION)
+                            ?.firstOrNull()
+                            ?.takeIf { it.isNotBlank() }
+                            ?.let { writeToComposer(it) }
+                            ?: toast("没听清，再试一次")
+                    }
+
+                    override fun onError(error: Int) {
+                        // 不把错误码直接丢给用户 —— 翻译成人话
+                        val msg = when (error) {
+                            SpeechRecognizer.ERROR_NO_MATCH,
+                            SpeechRecognizer.ERROR_SPEECH_TIMEOUT,
+                            -> "没听清，再试一次"
+                            SpeechRecognizer.ERROR_AUDIO -> "麦克风被占用或不可用"
+                            SpeechRecognizer.ERROR_INSUFFICIENT_PERMISSIONS -> "没有麦克风权限"
+                            SpeechRecognizer.ERROR_NETWORK,
+                            SpeechRecognizer.ERROR_NETWORK_TIMEOUT,
+                            -> "识别服务需要联网，检查一下网络"
+                            else -> "语音识别失败（$error）"
+                        }
+                        toast(msg)
+                    }
+
+                    override fun onReadyForSpeech(params: Bundle?) = Unit
+                    override fun onBeginningOfSpeech() = Unit
+                    override fun onRmsChanged(rmsdB: Float) = Unit
+                    override fun onBufferReceived(buffer: ByteArray?) = Unit
+                    override fun onEndOfSpeech() = Unit
+                    override fun onEvent(eventType: Int, params: Bundle?) = Unit
+                })
             }
+            recognizer?.startListening(
+                Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
+                    putExtra(
+                        RecognizerIntent.EXTRA_LANGUAGE_MODEL,
+                        RecognizerIntent.LANGUAGE_MODEL_FREE_FORM,
+                    )
+                    putExtra(RecognizerIntent.EXTRA_LANGUAGE, Locale.getDefault().toLanguageTag())
+                    putExtra(RecognizerIntent.EXTRA_PARTIAL_RESULTS, true)
+                    putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
+                },
+            )
+            toast("请说话…")
+        }.onFailure { toast("打不开语音识别：${it.message}") }
     }
 
     /** 把识别到的文字写进 DSH 的输入框。 */

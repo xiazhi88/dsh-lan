@@ -5,6 +5,12 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- 扫二维码填地址。声明为「非必需」，没相机的设备照样能装（手输地址）。 -->
     <uses-permission android:name="android.permission.CAMERA" />
+    <!--
+      语音输入用。SpeechRecognizer 需要它 —— 原来走系统识别界面时不需要，
+      但那条路在 ColorOS 上走不通（没有 Activity 处理 RECOGNIZE_SPEECH），
+      改成直接用识别服务 API 后就必须有了。
+    -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Android 13+ 发系统通知要运行时授权 -->
