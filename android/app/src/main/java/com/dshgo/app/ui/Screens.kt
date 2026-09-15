@@ -208,6 +208,18 @@ fun SetupScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
 
+                    Spacer(Modifier.height(14.dp))
+
+                    // 扫码填地址：比手敲 IP 快，也比「先在电脑上复制再粘贴」少一步 ——
+                    // 电脑上「设置 → 局域网访问」那一页就摆着二维码。
+                    OutlinedButton(
+                        onClick = onScan,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(14.dp),
+                    ) {
+                        Text("扫描二维码", style = MaterialTheme.typography.labelLarge)
+                    }
+
                     if (error != null) {
                         Spacer(Modifier.height(14.dp))
                         ErrorNote(error)
