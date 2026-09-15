@@ -16,6 +16,8 @@ public final class Prefs {
     private static final String KEY_AWAKE = "keep_awake";
     private static final String KEY_SCALE = "ui_scale";
     private static final String KEY_NOTIFY = "notify_enabled";
+    private static final String KEY_UPDATE_AT = "update_checked_at";
+    private static final String KEY_UPDATE_LATEST = "update_latest";
 
     /** 界面缩放的取值范围与默认值。 */
     public static final float SCALE_MIN = 0.75f;
@@ -134,5 +136,27 @@ public final class Prefs {
             s = s.substring(0, s.length() - 1);
         }
         return s;
+    }
+
+    // ------------------------------------------------------------------
+    // 检查更新（UpdateCheck 用）
+    // ------------------------------------------------------------------
+
+    /** 上次检查更新的时间戳，0 = 从没查过。 */
+    public long lastUpdateCheckAt() {
+        return sp.getLong(KEY_UPDATE_AT, 0L);
+    }
+
+    public void setLastUpdateCheckAt(long v) {
+        sp.edit().putLong(KEY_UPDATE_AT, v).commit();
+    }
+
+    /** 上次查到的远端版本号；null = 还不知道。 */
+    public String lastKnownLatest() {
+        return sp.getString(KEY_UPDATE_LATEST, null);
+    }
+
+    public void setLastKnownLatest(String v) {
+        sp.edit().putString(KEY_UPDATE_LATEST, v).commit();
     }
 }

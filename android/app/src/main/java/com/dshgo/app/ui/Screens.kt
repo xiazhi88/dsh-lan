@@ -343,6 +343,16 @@ fun SettingsSheet(
     lastEventAt: Long,
     onTestNotify: () -> Unit,
     onNotifySettings: () -> Unit,
+    /** 本机版本号（BuildConfig.VERSION_NAME）。 */
+    currentVersion: String,
+    /** 远端最新版本号；null = 还不知道。 */
+    updateLatest: String?,
+    /** 远端是否比本机新。 */
+    updateNewer: Boolean,
+    /** 正在手动检查。 */
+    updateChecking: Boolean,
+    onCheckUpdate: () -> Unit,
+    onDownload: () -> Unit,
     scale: Float,
     onScale: (Float) -> Unit,
     onLayout: (String) -> Unit,
@@ -524,6 +534,69 @@ fun SettingsSheet(
             }
 
             Spacer(Modifier.height(20.dp))
+
+            // 版本与更新
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+            ) {
+                Column(Modifier.padding(14.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "版本",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                if (updateChecking) "正在检查…" else "当前 $currentVersion",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        TextButton(
+                            onClick = onCheckUpdate,
+                            enabled = !updateChecking,
+                            contentPadding = PaddingValues(horizontal = 10.dp),
+                        ) {
+                            Text("检查更新", style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+
+                    // 有新版本才占地方 —— 没查到（网络不通）时什么都不说，
+                    // 检查更新失败不该打扰用户。
+                    if (updateNewer && updateLatest != null) {
+                        Spacer(Modifier.height(10.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(
+                                "有新版本 $updateLatest",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.weight(1f),
+                            )
+                            OutlinedButton(
+                                onClick = onDownload,
+                                shape = RoundedCornerShape(12.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp),
+                            ) {
+                                Text("去下载", style = MaterialTheme.typography.labelMedium)
+                            }
+                        }
+                    } else if (!updateChecking && updateLatest != null && !updateNewer) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "已是最新版本",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = DshColor.Running,
+                        )
+                    }
+                }
+            }
 
             // 通知
             Surface(

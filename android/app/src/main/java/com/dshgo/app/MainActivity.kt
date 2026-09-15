@@ -1,5 +1,6 @@
 package com.dshgo.app
 
+import com.dshgo.app.data.UpdateCheck
 import android.annotation.SuppressLint
 import android.content.Intent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -222,6 +223,11 @@ class MainActivity : ComponentActivity() {
                     onTestNotify = ::onTestNotify,
                     onNotifySettings = ::onNotifySettings,
                     onScan = ::onScan,
+                    updateLatest = ui.updateLatest,
+                    updateNewer = ui.updateNewer,
+                    updateChecking = ui.updateChecking,
+                    onCheckUpdate = { checkUpdate(force = true) },
+                    onDownload = ::openDownload,
                     onOpenPanel = {
                         SessionWatcher.markAllSeen()
                         ui = ui.copy(panelOpen = true)
@@ -244,6 +250,9 @@ class MainActivity : ComponentActivity() {
         // 从通知点进来 / 冷启动时带过来的目标会话
         consumeOpenSession(intent)
         if (prefs.notifyEnabled()) startWatching()
+
+        // 后台查一次更新（内部有 24 小时节流，失败静默）
+        checkUpdate()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -478,6 +487,9 @@ class MainActivity : ComponentActivity() {
         // 而改地址走的正是 connect → 握手，这里就是那个该调的地方。
         if (prefs.notifyEnabled()) startWatching()
 
+        // 后台查一次更新（内部有 24 小时节流，失败静默）
+        checkUpdate()
+
         startLoadTimeout()
         webView.loadUrl(entry)
     }
@@ -610,6 +622,32 @@ class MainActivity : ComponentActivity() {
         ui = ui.copy(
             notifyProblem = if (ok) null else "没能发出通知 —— 先看系统有没有给通知权限。",
         )
+    }
+
+    /**
+     * 检查有没有新版本。
+     *
+     * 走后台线程、短超时，**失败一律静默** —— 检查更新不是主功能，
+     * 国内直连 GitHub 时常不通，不该因此让界面出现报错或卡顿。
+     */
+    private fun checkUpdate(force: Boolean = false) {
+        if (force) ui = ui.copy(updateChecking = true)
+        Thread({
+            val r = UpdateCheck.check(this, BuildConfig.VERSION_NAME, force)
+            handler.post {
+                ui = ui.copy(updateLatest = r.latest, updateNewer = r.newer, updateChecking = false)
+            }
+        }, "dsh-update-check").start()
+    }
+
+    /** 打开 APK 下载页（交给浏览器，App 自己不下载、不装）。 */
+    private fun openDownload() {
+        runCatching {
+            startActivity(
+                Intent(Intent.ACTION_VIEW, android.net.Uri.parse(UpdateCheck.APK_URL))
+                    .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }
     }
 
     /** 跳到系统通知设置。 */
@@ -793,6 +831,12 @@ data class ShellState(
     val notifyProblem: String? = null,
     val panelOpen: Boolean = false,
     val crashReport: String? = null,
+    /** 检查更新的结果：远端最新版本号（null = 还不知道）。 */
+    val updateLatest: String? = null,
+    /** 远端是否比本机新。 */
+    val updateNewer: Boolean = false,
+    /** 正在手动检查。 */
+    val updateChecking: Boolean = false,
 )
 
 // ---------------------------------------------------------------------------
@@ -818,6 +862,11 @@ private fun Shell(
     onTestNotify: () -> Unit,
     onNotifySettings: () -> Unit,
     onScan: () -> Unit,
+    updateLatest: String?,
+    updateNewer: Boolean,
+    updateChecking: Boolean,
+    onCheckUpdate: () -> Unit,
+    onDownload: () -> Unit,
     onOpenPanel: () -> Unit,
     onClosePanel: () -> Unit,
     onClearNotices: () -> Unit,
@@ -940,6 +989,12 @@ private fun Shell(
                 onToggleAwake = onToggleAwake,
                 onClearSession = onClearSession,
                 onChangeUrl = onChangeUrl,
+                updateLatest = updateLatest,
+                updateNewer = updateNewer,
+                updateChecking = updateChecking,
+                onCheckUpdate = onCheckUpdate,
+                onDownload = onDownload,
+                currentVersion = BuildConfig.VERSION_NAME,
                 onDismiss = onCloseSettings,
             )
         }
