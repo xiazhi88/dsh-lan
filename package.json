@@ -28,11 +28,12 @@
   },
   "license": "MIT",
   "keywords": [
-    "deepseek-harness",
-    "dsh",
     "dsh-plugin",
-    "lan",
+    "dsh",
+    "deepseek-harness",
+    "deepseek",
     "mobile",
+    "lan",
     "proxy"
   ],
   "dsh": {
