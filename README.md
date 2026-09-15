@@ -81,7 +81,31 @@ dsh-lan: 局域网地址 http://192.168.1.100:3081  （上游 127.0.0.1:3080）
 
 ![设置页签](https://raw.githubusercontent.com/xiazhi88/dsh-lan/main/docs/settings-tab.png)
 
-它展示：本机所有可用地址（点一下复制）、监听状态、以及「手机需在同一网络」的提醒。
+它展示：本机所有可用地址（点一下复制）、**从外面访问的引导**、监听状态。
+
+### 公网访问（Tailscale）
+
+本插件只暴露到局域网 —— 直接开端口转发是危险的：`dsh web` 没有登录口令，
+暴露到公网等于把这台电脑的任意命令执行权交给扫描器。
+
+推荐 Tailscale：设备级私有网络，点对点直连，不用开端口。
+
+页签会**自动识别 Tailscale 是否已就绪** —— 服务端枚举网卡时就能认出
+`100.64.0.0/10`（CGNAT 段）的地址，所以两种状态给的是不同内容：
+
+| 已装 Tailscale | 未装 |
+|---|---|
+| ![已就绪](https://raw.githubusercontent.com/xiazhi88/dsh-lan/main/docs/settings-tab.png) | ![引导](https://raw.githubusercontent.com/xiazhi88/dsh-lan/main/docs/settings-tailscale-guide.png) |
+
+对应关系：
+
+```
+GET /__dsh_lan__/info
+→ { "addresses": ["http://192.168.1.100:3081", "http://100.100.190.107:3081"],
+    "tailscale": ["http://100.100.190.107:3081"] }
+```
+
+`tailscale` 非空即「已就绪」。它同时也是 `addresses` 的子集，所以老客户端不受影响。
 
 实现上是 DSH 客户端插件的一个 slot：
 

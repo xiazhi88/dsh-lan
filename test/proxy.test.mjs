@@ -12,7 +12,13 @@ import assert from 'node:assert/strict';
 import { createServer, request as httpRequest } from 'node:http';
 import { once } from 'node:events';
 
-import { createLanProxy, injectPolyfill, INJECT_MARK, INFO_PATH } from '../lib/proxy.mjs';
+import {
+  createLanProxy,
+  injectPolyfill,
+  isTailscaleAddress,
+  INJECT_MARK,
+  INFO_PATH,
+} from '../lib/proxy.mjs';
 
 const TOKEN = 'tok-abc123';
 const COOKIE = 'dsh-auth-testcookie';
@@ -261,4 +267,40 @@ test('自描述端点不转发，直接答', async (t) => {
   assert.equal(info.name, 'dsh-lan');
   assert.ok(Array.isArray(info.addresses));
   assert.equal(up.seen.length, before, '不该打到上游');
+});
+
+test('Tailscale 地址识别（100.64.0.0/10）', () => {
+  // 设置页靠这个判断「从外面访问」是否已就绪，边界必须准
+  const yes = ['100.64.0.1', '100.100.190.107', '100.127.255.254'];
+  const no = ['100.63.255.255', '100.128.0.1', '192.168.1.100', '10.0.0.5', '::1', '', null];
+
+  for (const ip of yes) assert.equal(isTailscaleAddress(ip), true, `${ip} 应判为 Tailscale`);
+  for (const ip of no) assert.equal(isTailscaleAddress(ip), false, `${ip} 不应判为 Tailscale`);
+});
+
+test('自描述端点把 Tailscale 地址单独列出', async (t) => {
+  const up = await startFakeDsh();
+  const proxy = createLanProxy({
+    port: 0,
+    bind: '127.0.0.1',
+    upstream: { host: '127.0.0.1', port: up.port },
+    launchToken: () => '',
+  });
+  const addr = await proxy.listen();
+  t.after(async () => {
+    await proxy.close();
+    up.server.closeAllConnections?.();
+    up.server.close();
+  });
+
+  const res = await fetchThrough(addr.port, INFO_PATH, { host: '192.168.1.50:3081' });
+  const info = JSON.parse(res.body);
+
+  assert.ok(Array.isArray(info.addresses), 'addresses 保持数组，向后兼容');
+  assert.ok(Array.isArray(info.tailscale), 'tailscale 单独一组');
+  assert.equal(typeof info.port, 'number');
+  // 这台机器未必有 Tailscale，所以只断言「tailscale 是 addresses 的子集」
+  for (const url of info.tailscale) {
+    assert.ok(info.addresses.includes(url), `${url} 应在 addresses 里`);
+  }
 });
