@@ -36,7 +36,10 @@ object ApkDownloader {
     /** 下载超时给得比别处长：几个 MB 在慢网上确实要时间。 */
     private val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
-            .connectTimeout(15, TimeUnit.SECONDS)
+            // 连接超时给得**短**：两个源是「都试一遍」，先试的那个连不上时
+            // 不该让用户干等 15 秒才看到回退。连接本身要么几秒内成，要么就是不通。
+            // 读取超时给得长 —— 慢网下载几个 MB 确实要时间，那是另一回事。
+            .connectTimeout(8, TimeUnit.SECONDS)
             .readTimeout(60, TimeUnit.SECONDS)
             .build()
     }
@@ -83,6 +86,14 @@ object ApkDownloader {
                     var done = 0L
                     onProgress(Progress(0, total))
                     while (true) {
+                        // ★ 收够 Content-Length 就停，**不要**等对端关连接。
+                        //
+                        // 实测踩过：GitHub 的 release 资源走 CDN，响应头带 Content-Length
+                        // 但连接不会立刻关 —— 原来的写法只认 EOF（read 返回 -1），
+                        // 于是字节早就收完了、进度停在 100%，却一直阻塞到 60 秒读超时才结束。
+                        // 用户看到的就是"卡在下载中不动"。
+                        if (total > 0 && done >= total) break
+
                         val n = input.read(buf)
                         if (n < 0) break
                         sink.write(buf, 0, n)

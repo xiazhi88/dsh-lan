@@ -919,21 +919,39 @@ class MainActivity : ComponentActivity() {
         ui = ui.copy(updatePhase = "downloading", updateBytes = 0, updateTotal = 0, updateError = null)
 
         lifecycleScope.launch {
-            runCatching {
-                ApkDownloader.download(this@MainActivity, target) { p ->
-                    handler.post {
-                        ui = ui.copy(updateBytes = p.bytes, updateTotal = p.total)
-                    }
-                }
-            }.onSuccess { apk ->
-                ui = ui.copy(updatePhase = "ready")
-                launchInstaller(apk)
-            }.onFailure { e ->
-                ui = ui.copy(
-                    updatePhase = "failed",
-                    updateError = e.message ?: "下载失败",
-                )
+            fun report(p: ApkDownloader.Progress) {
+                handler.post { ui = ui.copy(updateBytes = p.bytes, updateTotal = p.total) }
             }
+
+            // 先镜像，失败再试官方。
+            //
+            // 国内网络下这两个源经常"一个通一个不通"，而用户不该为此做选择 ——
+            // 他点的是"下载并安装"，不是"选一个 CDN"。
+            var firstError: String? = null
+            runCatching { ApkDownloader.download(this@MainActivity, target, ::report) }
+                .onFailure { firstError = it.message ?: "下载失败" }
+
+            if (ui.updatePhase == "downloading" && !ApkDownloader.existing(this@MainActivity).let { it != null && it.length() > 0 }) {
+                // 镜像没成，试官方
+                runCatching {
+                    ApkDownloader.download(this@MainActivity, UpdateCheck.APK_URL, ::report)
+                }.onFailure {
+                    ui = ui.copy(
+                        updatePhase = "failed",
+                        // 两个源都失败时把两个原因都给出来 —— 只说一个会让人以为换个源就好了
+                        updateError = listOfNotNull(firstError, it.message).joinToString("；"),
+                    )
+                    return@launch
+                }
+            }
+
+            val apk = ApkDownloader.existing(this@MainActivity)
+            if (apk == null) {
+                ui = ui.copy(updatePhase = "failed", updateError = firstError ?: "下载失败")
+                return@launch
+            }
+            ui = ui.copy(updatePhase = "ready")
+            launchInstaller(apk)
         }
     }
 

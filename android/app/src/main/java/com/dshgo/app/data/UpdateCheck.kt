@@ -115,9 +115,21 @@ object UpdateCheck {
         val candidates = listOfNotNull(
             runCatching { fetchFromJsDelivrTags() }.getOrNull(),
             runCatching { fetchFromNpmMirror() }.getOrNull(),
-            runCatching { fetchLatestTag() }.getOrNull()?.let(::tagToVersion)?.let { it to APK_URL },
+            // ★ 版本号从 GitHub 拿到，但下载地址仍然给**镜像**。
+            //
+            // 实测踩过：GitHub 的 api 能通、release 资源却连不上（国内网络下
+            // 两者经常一个通一个不通），于是"能查到新版本、却下载失败"。
+            // 镜像标签 dist-v<版本> 每次发布都会建，所以任何来源拿到的版本号
+            // 都能拼出镜像地址。
+            runCatching { fetchLatestTag() }.getOrNull()?.let(::tagToVersion)
+                ?.let { it to cdnApk(it) },
         )
-        val best = candidates.maxByOrNull { it.first }
+        // ★ 必须用 isNewer 逐段比数字，**不能** maxByOrNull { it.first }。
+        //
+        // 字符串比较会得出 "4.0.6" > "4.0.10"（因为 '6' > '1'）—— 于是就算
+        // GitHub 那条路拿到了 4.0.10，取最大值这里也会挑回 4.0.6。
+        // 单元测试里专门有 isNewer("3.10.0","3.9.0") 防这个坑，结果调用处我自己忘了用。
+        val best = candidates.reduceOrNull { a, b -> if (isNewer(b.first, a.first)) b else a }
         val latest = best?.first
         val apkUrl = best?.second ?: APK_URL
 
