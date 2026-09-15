@@ -53,124 +53,24 @@ authority 也始终一致。
 
 ## 安装
 
-**一个包，装完就有全部功能：**
-
 ```sh
 dsh plugin --profile web add github:xiazhi88/dshgo -w
 # 然后重启 dsh web
 ```
 
-> 已发布到 npm 之后可以简写成 `dsh plugin --profile web add dshgo -w`。
+已发布到 npm 之后可以简写成 `dsh plugin --profile web add dshgo -w`。
+
+装完就有：**局域网入口**（设置 → 局域网访问，带二维码）、**移动端布局**、
+大响应压缩、删除会话。移动端布局的代码已内联在本包里，**不需要另装
+`dsh-web-mobile`**。
+
+> **两个注意点**
 >
-> `dsh plugin add` 会把声明了 `dsh.bundle` 的包自动加进 profile 的 `bundles`，
-> 所以你不用手改配置文件。
-
-装上就有三件事：**局域网入口**（设置 → 局域网访问，带二维码）、**移动端布局**、
-以及大响应压缩与删除会话。**不需要再装 `dsh-web-mobile`** —— 它的代码已经内联进来了。
-
-### 为什么是内联，而不是依赖它
-
-试过依赖：在本插件的 `cordis.patch.yml` 里多插一行把它挂上。**那条路会炸** ——
-市场的「一键安装」会热挂载插件，读的正是那张补丁，于是它被挂了**两次**：
-
-```
-failed to apply loader entry (dsh-web-mobile):
-locale namespace "mobileNav" already has locale "zh"
-```
-
-这不是插件失效，是**整个 `dsh web` 起不来**，连市场的卸载页都打不开，只能手改文件
-才能恢复。而 `dsh-web-mobile` 的宿主半会 patch `http.ServerResponse.prototype`，
-挂两次是真的有害。
-
-内联后挂载次数完全由我们自己控制，任何安装路径都不会重复。代价是这份代码要随
-上游同步 —— 用 `node tools/vendor-mobile.mjs` 拉新版本，再跑
-`node tools/build-client.mjs` 重新拼产物，然后**实测**一遍。
-
-内联的三块（均为 MIT，已保留原作者版权与
-[LICENSE](client/vendor/LICENSE.dsh-web-mobile)）：
-
-| 位置 | 内容 |
-|---|---|
-| `client/vendor/dsh-web-mobile.js` | 移动端布局（[上游](https://github.com/mexiaosqwq/dsh-web-mobile) 的客户端产物） |
-| `lib/vendor/delete-session.js` | 删除会话的宿主路由（它的客户端会调） |
-| `lib/vendor/compress.js` | 大响应压缩（长会话在手机上是几 MB） |
-
-### ⚠️ 从 dsh-lan 升级过来：必须先卸掉旧包
-
-这个项目原来叫 `dsh-lan`（插件）/ `DSH 口袋`（App），后来整体改名为 `dshgo`。
-**改名不是覆盖 —— 旧包会留在 profile 里**，于是设置侧栏出现**两个「局域网访问」**：
-
-| | 旧 `dsh-lan` | 新 `dshgo` |
-|---|---|---|
-| 页签 id | `dsh-lan` | `dshgo` |
-| 端点 | `/__dsh_lan__/info` | `/__dshgo__/info` |
-
-两个 id 不同，slot 不会去重，所以各占一个位置。**卸载旧包即可：**
-
-```sh
-dsh plugin --profile web remove dsh-lan
-# 重启 dsh web
-```
-
-`remove` 若说找不到，就手改 profile 的 `package.json`，把 `dsh-lan` 从
-`dependencies` 和 `dsh.profile.bundles` 里都删掉。
-
-Android App 那边同理：`com.dsh.remote`（DSH 口袋）与 `com.dshgo.app`（DSH Go）
-是**两个不同的应用**，装过旧版的要先卸载。
-
-### ⚠️ 装完必须重启 `dsh web`
-
-后端半（转发代理）只在**启动时**挂载，不会热生效。不重启的表现很有迷惑性：
-
-- `dsh web` 本身照常运行
-- 设置里**也会**多出「局域网访问」页签（前端半按已安装的包加载，与 bundle 层无关）
-- 但页签里只显示「**服务端半没有运行**」，终端里也没有 `dshgo:` 那两行
-
-这不是装失败，是没重启。重启后终端应该出现：
-
-```
-dshgo: 局域网地址 http://192.168.1.100:3081  （上游 127.0.0.1:3080）
-dshgo: 自描述端点 /__dshgo__/info（客户端可据此自动发现地址）
-```
-
-**一行都没有**，才是真的没进 `bundle` 层 —— 去看 profile 的 `package.json` 里
-`dsh.profile.bundles` 有没有 `dshgo`。
-
-### 为什么不合成一个包
-
-试过，是错的，而且失败方式很严重。
-
-当时的做法是在本插件的 `cordis.patch.yml` 里**多插一行**把 `dsh-web-mobile` 一起挂上。
-问题是市场的「一键安装」会热挂载插件，读的正是这张补丁：
-
-```js
-rows = parseSimplePatch(readFileSync(join(dir, 'cordis.patch.yml'), 'utf8'))
-```
-
-于是它不只挂了 `dshgo`，还把 `dsh-web-mobile` **又挂了一次**。如果用户自己也装过
-（它本来就在 `bundles` 里），就是双重挂载：
-
-```
-failed to apply loader entry (dsh-web-mobile):
-locale namespace "mobileNav" already has locale "zh"
-```
-
-这不是插件失效，是**整个 `dsh web` 起不来** —— 连市场的卸载页面都打不开，只能手改文件
-才能恢复。而且 `dsh-web-mobile` 的宿主半并不空：它会 patch
-`http.ServerResponse.prototype` 做响应压缩、还会注册路由，挂两次是真的有害。
-
-**一个 patch 文件不该替另一个插件决定它挂几次。** 所以回到一人一半：本插件只做局域网
-转发，移动端适配由你自己决定装不装 —— `dsh-web-mobile` 声明的是一条**可选**的
-peer dependency，不装也能用，只是手机上看到的是 DSH 桌面 UI。
-
-
-重启后终端会打印局域网地址：
-
-```
-dshgo: 局域网地址 http://192.168.1.100:3081  （上游 127.0.0.1:3080）
-```
-
-手机连同一 WiFi，把地址填进客户端即可。
+> - **装完必须重启 `dsh web`。** 后端半只在启动时挂载。不重启的话页签会出现，
+>   但会显示「服务端半没有运行」—— 不是装失败，是没重启。
+> - **从旧名 `dsh-lan` 升级要先卸旧包**，否则设置里会多出一个同名的「局域网访问」
+>   （两个包的页签 id 不同，不会被去重）：`dsh plugin --profile web remove dsh-lan`。
+>   App 同理 —— `com.dsh.remote` 和 `com.dshgo.app` 是两个应用。
 
 ## 配置（可选）
 
@@ -183,7 +83,7 @@ dshgo: 局域网地址 http://192.168.1.100:3081  （上游 127.0.0.1:3080）
     bind: 0.0.0.0     # 对外绑定地址
 ```
 
-端口被占用时（比如 `dsh-pocket` 还在跑）插件只会打一条警告，不影响 `dsh web` 本身。
+端口被占用时会自动往后试 10 个（启动日志会打印实际用的那个），不影响 `dsh web` 本身。
 
 ## 设置页签
 
@@ -245,16 +145,12 @@ GET /__dshgo__/info
   }
 ```
 
-它注册在 **DSH 的 web server 上**，不是只由转发代理提供 —— 这一点很关键：
+它注册在 **DSH 的 web server 上**，所以本机直连和走代理都能拿到：
 
-| 访问方式 | 能否拿到 |
+| 访问方式 | 结果 |
 |---|---|
-| 本机 `http://127.0.0.1:3080/__dshgo__/info` | ✅ 直接命中 |
-| 手机 `http://192.168.1.100:3081/__dshgo__/info` | ✅ 代理转发到 3080，同一个处理器 |
-
-早期版本只让代理应答这个路径，于是**本机看页面时永远是 404** —— 设置页写
-「服务端半没有运行」，而终端里插件明明跑得好好的，重启也救不了。前端取的是
-相对路径，请求跟着页面走，所以端点必须在两个入口上都够得着。
+| 本机 `http://127.0.0.1:3080/__dshgo__/info` | 直接命中 |
+| 手机 `http://192.168.1.100:3081/__dshgo__/info` | 代理转发到 3080，同一个处理器 |
 
 不需要认证（只回本机地址，不含敏感信息）。
 
@@ -269,35 +165,11 @@ GET /__dshgo__/info
 插件本身不做认证 —— 如果需要访问密码，那是另一个层面的需求，请用
 [`dsh-pocket`](https://github.com/shaobeichen/dsh-pocket) 或自己的反向代理。
 
-## 移动端 UI 是从哪来的
-
-**DSH 核心是纯桌面 Web UI** —— `max-width: 1023px` 这个断点在核心里一次都没出现。
-抽屉布局、移动端 CSS、触控优化全部来自
-[`dsh-web-mobile`](https://github.com/mexiaosqwq/dsh-web-mobile)（MIT，作者 mexiaosqwq）。
-
-本包把它作为**依赖**一起挂上（见上方 `cordis.patch.yml` 的第二行），所以用户装一个包就够。
-它是独立维护的上游项目，不是本仓库的代码，出问题请先看
-[上游 issues](https://github.com/mexiaosqwq/dsh-web-mobile/issues)。
-
-| 移动端适配生效 | 强制宽屏 |
-|---|---|
-| 角落切换按钮、无侧栏、输入框满宽 | DSH 原生桌面布局 |
-
-## 与 dsh-pocket 的关系
-
-两者定位不同，可以并存：
-
-| | dshgo | dsh-pocket |
-|---|---|---|
-| 定位 | 只做局域网转发，给客户端用 | 完整的手机访问方案 |
-| 公网隧道 | ✗ | ✓（cloudflared） |
-| 访问密码 | ✗ | ✓ |
-| 二维码 / 设置页 | ✗ | ✓ |
-| **移动端 UI 适配** | ✗（DSH 核心也没有） | ✓（移植自 MIT 的 dsh-web-mobile） |
-| 依赖 | 无 | qrcode 等 |
-
-需要扫码、公网、密码就用 dsh-pocket；只需要「让手机连得上」就用本插件。
-
 ## 许可
 
-MIT
+本项目：MIT。
+
+移动端布局与两项宿主功能内联自
+[`dsh-web-mobile`](https://github.com/mexiaosqwq/dsh-web-mobile)，
+MIT，Copyright (c) 2026 mexiaosqwq，
+许可见 [`client/vendor/LICENSE.dsh-web-mobile`](client/vendor/LICENSE.dsh-web-mobile)。
