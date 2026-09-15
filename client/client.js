@@ -29,6 +29,25 @@ window.__ModuleLoader__.load({
     const ZH = (typeof navigator !== 'undefined' && String(navigator.language || '').toLowerCase().startsWith('zh'));
     const L = (zh, en) => (ZH ? zh : en);
 
+    /**
+     * 端点 404 时给用户看的话。
+     *
+     * `/__dsh_lan__/info` 是**服务端半**提供的，所以 404 不是「读取出错」，而是
+     * 服务端半压根没在跑。裸的 `HTTP 404` 让人完全无从下手 —— 下面两种原因都常见，
+     * 而且用户自己能查：
+     *   ① 只装了包但没进 profile 的 bundle 层（前端照样加载，服务端没有）
+     *   ② 转发端口被占用，服务端放弃了监听
+     */
+    const NOT_RUNNING = L(
+      '服务端半没有运行 —— 这个地址由它提供，只加载前端是不会有它的。'
+      + '常见原因：① 插件没进入 profile 的 bundle 层（看 dsh 启动日志里有没有 dsh-lan 那两行）；'
+      + '② 转发端口被占用。先重启一次 dsh web 看看。',
+      'The host half is not running — this address is served by it, and the client half alone '
+      + 'will not provide it. Usual causes: (1) the plugin never entered the profile bundle layer '
+      + '(check the boot log for the dsh-lan lines); (2) the forward port was taken. '
+      + 'Try restarting dsh web first.',
+    );
+
     /** DSH 的主题 token，都带浅色回退 —— 深浅色下都能看。 */
     const C = {
       primary: 'var(--dsw-alias-label-primary,#111827)',
@@ -225,7 +244,12 @@ window.__ModuleLoader__.load({
         fetch('/__dsh_lan__/info', { headers: { accept: 'application/json' } })
           .then((res) => (res.ok ? res.json() : Promise.reject(new Error('HTTP ' + res.status))))
           .then((data) => { if (alive) setInfo(data); })
-          .catch((err) => { if (alive) setError(String((err && err.message) || err)); });
+          .catch((err) => {
+            if (!alive) return;
+            const msg = String((err && err.message) || err);
+            // 404 = 服务端半不在，不是「读取出错」。给一句能行动的话，别甩状态码。
+            setError(msg.includes('404') ? NOT_RUNNING : msg);
+          });
         return () => { alive = false; };
       }, []);
 
@@ -284,7 +308,7 @@ window.__ModuleLoader__.load({
             }),
             (info && !error)
               ? L('正在监听 :', 'Listening on :') + String(info.port)
-              : L('未在监听', 'Not listening'),
+              : (error ? L('服务端半未运行', 'Host half not running') : L('读取中…', 'Loading…')),
           ),
           h('div', { style: styles.muted },
             L('本插件只做转发：把只监听 127.0.0.1 的 dsh web 暴露到局域网，并补上移动端适配。',
