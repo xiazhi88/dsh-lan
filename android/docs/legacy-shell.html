@@ -1,0 +1,654 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>DSH 口袋</title>
+<style>
+/* ============================================================
+   DSH 口袋 · 应用外壳设计系统
+   形态：手机（单列） / 平板·横屏（双列） / 设置浮层（底部抽屉·居中卡片）
+   ============================================================ */
+
+:root{
+  --bg:#080A0F;
+  --bg-2:#0E1220;
+  --surface:rgba(255,255,255,.045);
+  --surface-2:rgba(255,255,255,.07);
+  --line:rgba(255,255,255,.10);
+  --line-strong:rgba(255,255,255,.18);
+  --fg:#E9EDF6;
+  --fg-dim:#9AA4B8;
+  --fg-faint:#616B80;
+  --accent:#4D6BFE;
+  --accent-2:#6EE7F9;
+  --ok:#34D399;
+  --warn:#FBBF24;
+  --danger:#F87171;
+  --r-sm:10px; --r-md:14px; --r-lg:20px; --r-xl:26px;
+  --pad:20px;
+  --shadow:0 24px 60px rgba(0,0,0,.55);
+  --ease:cubic-bezier(.22,.61,.36,1);
+}
+
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%}
+body{
+  margin:0;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif;
+  color:var(--fg);
+  background:var(--bg);
+  overflow:hidden;
+  -webkit-font-smoothing:antialiased;
+  text-rendering:optimizeLegibility;
+}
+
+/* 底纹：两团辉光 + 细网格，避免纯黑发闷 */
+.bg{position:fixed;inset:0;z-index:0;pointer-events:none;overflow:hidden}
+.bg::before,.bg::after{content:"";position:absolute;border-radius:50%;filter:blur(90px);opacity:.5}
+.bg::before{width:min(70vw,560px);aspect-ratio:1;top:-18vh;left:-14vw;
+  background:radial-gradient(circle,rgba(77,107,254,.55),transparent 70%)}
+.bg::after{width:min(64vw,520px);aspect-ratio:1;bottom:-22vh;right:-16vw;
+  background:radial-gradient(circle,rgba(110,231,249,.28),transparent 70%)}
+.grid{position:absolute;inset:0;opacity:.16;
+  background-image:linear-gradient(rgba(255,255,255,.06) 1px,transparent 1px),
+                   linear-gradient(90deg,rgba(255,255,255,.06) 1px,transparent 1px);
+  background-size:44px 44px;
+  mask-image:radial-gradient(circle at 50% 40%,#000 20%,transparent 78%);
+  -webkit-mask-image:radial-gradient(circle at 50% 40%,#000 20%,transparent 78%)}
+
+/* 设置浮层时的遮罩 */
+.scrim{position:fixed;inset:0;z-index:5;display:none;background:rgba(4,6,11,.66);
+  backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px)}
+body.is-modal .scrim{display:block;animation:fade .24s var(--ease)}
+/* 浮层形态下外壳 WebView 必须透出去，才能看到底下的 DSH 界面 */
+body.is-modal{background:transparent}
+body.is-modal .bg{display:none}
+
+/* ---------- 舞台 ---------- */
+.stage{
+  position:relative;z-index:1;height:100%;
+  display:flex;flex-direction:column;
+  padding:calc(env(safe-area-inset-top,0px) + 26px) calc(env(safe-area-inset-right,0px) + var(--pad))
+          calc(env(safe-area-inset-bottom,0px) + 26px) calc(env(safe-area-inset-left,0px) + var(--pad));
+  gap:22px;overflow-y:auto;overscroll-behavior:contain;
+}
+/* 品牌区 + 卡片作为「一个整体」垂直居中：用 margin:auto 而不是 justify-content:center，
+   这样内容超出屏幕时不会把顶部裁掉，而是自然滚动。 */
+.hero{margin-top:auto}
+.panel{margin-bottom:auto}
+
+/* ---------- 品牌区 ---------- */
+.hero{display:flex;flex-direction:column;gap:18px;flex:0 0 auto}
+.brand{display:flex;align-items:center;gap:13px}
+.mark{width:46px;height:46px;flex:0 0 auto;filter:drop-shadow(0 6px 18px rgba(77,107,254,.45))}
+.brand-text{min-width:0}
+.brand-text h1{margin:0;font-size:19px;font-weight:680;letter-spacing:.2px;line-height:1.2}
+.brand-text p{margin:3px 0 0;font-size:12.5px;color:var(--fg-faint);letter-spacing:.3px}
+
+.hero-detail{display:none}
+.feature{display:flex;align-items:flex-start;gap:11px;font-size:13.5px;color:var(--fg-dim);line-height:1.55}
+.feature b{color:var(--fg);font-weight:600}
+.feature .dot{width:22px;height:22px;flex:0 0 auto;border-radius:7px;margin-top:1px;
+  display:flex;align-items:center;justify-content:center;font-size:12px;
+  background:linear-gradient(140deg,rgba(77,107,254,.28),rgba(110,231,249,.16));
+  border:1px solid rgba(120,150,255,.28)}
+
+/* ---------- 面板 ---------- */
+.panel{
+  flex:0 0 auto;min-height:0;display:flex;align-items:center;justify-content:center;
+}
+.card{
+  width:100%;max-width:480px;
+  background:linear-gradient(180deg,rgba(255,255,255,.062),rgba(255,255,255,.028));
+  border:1px solid var(--line);border-radius:var(--r-xl);
+  padding:24px 22px;box-shadow:var(--shadow);
+  backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+  animation:rise .42s var(--ease) both;
+}
+@keyframes rise{from{opacity:0;transform:translateY(14px) scale(.985)}to{opacity:1;transform:none}}
+
+.screen{display:none}
+.screen.on{display:block}
+.card h2{margin:0 0 6px;font-size:20px;font-weight:680;letter-spacing:.1px}
+.card .sub{margin:0 0 20px;font-size:13.5px;color:var(--fg-dim);line-height:1.6}
+
+/* ---------- 输入 ---------- */
+.field{position:relative;margin-bottom:12px}
+.field label{display:block;font-size:11.5px;font-weight:600;letter-spacing:.9px;
+  text-transform:uppercase;color:var(--fg-faint);margin-bottom:8px}
+.input-wrap{display:flex;align-items:center;gap:8px;
+  background:rgba(0,0,0,.32);border:1px solid var(--line);border-radius:var(--r-md);
+  padding:0 6px 0 13px;transition:border-color .18s,box-shadow .18s,background .18s}
+.input-wrap:focus-within{border-color:rgba(77,107,254,.75);background:rgba(0,0,0,.45);
+  box-shadow:0 0 0 3.5px rgba(77,107,254,.18)}
+.input-wrap input{
+  flex:1 1 auto;min-width:0;background:none;border:0;outline:none;color:var(--fg);
+  font-size:13.5px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  padding:14px 0;letter-spacing:.1px;
+}
+.input-wrap input::placeholder{color:#48505f}
+.icon-btn{
+  flex:0 0 auto;border:0;background:var(--surface-2);color:var(--fg-dim);
+  border-radius:9px;padding:8px 10px;font-size:12px;font-weight:600;cursor:pointer;
+  font-family:inherit;transition:background .16s,color .16s,transform .1s;
+}
+.icon-btn:active{transform:scale(.94);background:rgba(255,255,255,.13);color:var(--fg)}
+
+/* 快捷地址 */
+.chips{display:flex;flex-wrap:wrap;gap:8px;margin:2px 0 18px}
+.chip{
+  border:1px solid var(--line);background:var(--surface);color:var(--fg-dim);
+  border-radius:999px;padding:7px 13px;font-size:12.5px;font-weight:550;cursor:pointer;
+  font-family:ui-monospace,SFMono-Regular,Menlo,monospace;transition:.16s;
+}
+.chip:active{transform:scale(.96)}
+.chip.on{border-color:rgba(77,107,254,.7);color:#C7D2FF;background:rgba(77,107,254,.16)}
+
+/* ---------- 按钮 ---------- */
+.btn{
+  width:100%;border:0;border-radius:var(--r-md);padding:15px 18px;
+  font-size:15.5px;font-weight:640;font-family:inherit;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;gap:9px;
+  transition:transform .1s,box-shadow .2s,background .18s,opacity .18s;
+}
+.btn:active{transform:scale(.982)}
+.btn-primary{
+  color:#fff;
+  background:linear-gradient(135deg,#5B78FF,#4D6BFE 45%,#3E5BF0);
+  box-shadow:0 10px 26px rgba(77,107,254,.34),inset 0 1px 0 rgba(255,255,255,.24);
+}
+.btn-primary:disabled{opacity:.5;box-shadow:none}
+.btn-ghost{background:var(--surface);color:var(--fg);border:1px solid var(--line)}
+.btn-ghost:active{background:var(--surface-2)}
+.btn-danger{background:rgba(248,113,113,.14);color:#FCA5A5;border:1px solid rgba(248,113,113,.3)}
+.row{display:flex;gap:10px;margin-top:10px}
+.row .btn{margin-top:0}
+
+.hint{margin:16px 0 0;font-size:12px;line-height:1.62;color:var(--fg-faint)}
+.hint code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px;
+  background:rgba(255,255,255,.07);border-radius:5px;padding:1.5px 6px;color:var(--fg-dim)}
+
+/* ---------- 连接中 ---------- */
+.connecting{display:flex;flex-direction:column;align-items:center;text-align:center;padding:10px 0 4px}
+.ring{width:62px;height:62px;position:relative;margin-bottom:20px}
+.ring svg{width:100%;height:100%;transform:rotate(-90deg)}
+.ring circle{fill:none;stroke-width:5;stroke-linecap:round}
+.ring .track{stroke:rgba(255,255,255,.09)}
+.ring .arc{stroke:url(#spinGrad);stroke-dasharray:38 200;animation:spin 1.15s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.connecting h2{margin:0 0 7px}
+.connecting .sub{margin:0}
+.steps{margin:20px 0 0;width:100%;display:flex;flex-direction:column;gap:9px;text-align:left}
+.step{display:flex;align-items:center;gap:9px;font-size:12.5px;color:var(--fg-faint);transition:color .3s}
+.step .tick{width:16px;height:16px;flex:0 0 auto;border-radius:50%;
+  border:1.5px solid var(--line-strong);display:flex;align-items:center;justify-content:center;
+  font-size:10px;color:transparent;transition:.28s}
+.step.act{color:var(--fg)}
+.step.act .tick{border-color:var(--accent);box-shadow:0 0 0 3px rgba(77,107,254,.18)}
+.step.done{color:var(--fg-dim)}
+.step.done .tick{background:var(--ok);border-color:var(--ok);color:#04231a}
+
+/* ---------- 错误 ---------- */
+.err-icon{width:56px;height:56px;border-radius:17px;margin-bottom:16px;
+  display:flex;align-items:center;justify-content:center;font-size:26px;
+  background:linear-gradient(140deg,rgba(248,113,113,.2),rgba(251,191,36,.12));
+  border:1px solid rgba(248,113,113,.3)}
+.err-code{display:inline-block;font-family:ui-monospace,Menlo,monospace;font-size:11.5px;
+  color:#FCA5A5;background:rgba(248,113,113,.12);border:1px solid rgba(248,113,113,.26);
+  border-radius:6px;padding:2.5px 8px;margin-bottom:10px}
+.tips{margin:18px 0 0;padding:14px 15px;border-radius:var(--r-md);
+  background:rgba(255,255,255,.035);border:1px solid var(--line)}
+.tips h4{margin:0 0 8px;font-size:11.5px;letter-spacing:.9px;text-transform:uppercase;color:var(--fg-faint)}
+.tips ul{margin:0;padding-left:16px}
+.tips li{font-size:12.5px;line-height:1.75;color:var(--fg-dim)}
+
+/* ---------- 设置 ---------- */
+.sheet-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}
+.sheet-head h2{margin:0}
+.close{width:32px;height:32px;border-radius:10px;border:1px solid var(--line);
+  background:var(--surface);color:var(--fg-dim);font-size:17px;line-height:1;cursor:pointer;
+  display:flex;align-items:center;justify-content:center;transition:.16s;font-family:inherit}
+.close:active{background:var(--surface-2);color:var(--fg)}
+
+.set-group{margin-bottom:16px}
+.set-group>label{display:block;font-size:11.5px;font-weight:600;letter-spacing:.9px;
+  text-transform:uppercase;color:var(--fg-faint);margin-bottom:9px}
+.set-val{display:flex;align-items:center;gap:10px;justify-content:space-between;
+  background:rgba(0,0,0,.3);border:1px solid var(--line);border-radius:var(--r-md);padding:13px 14px}
+.set-val .v{font-family:ui-monospace,Menlo,monospace;font-size:13px;color:var(--fg);
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+
+.seg{display:flex;gap:5px;background:rgba(0,0,0,.32);border:1px solid var(--line);
+  border-radius:var(--r-md);padding:5px}
+.seg button{
+  flex:1 1 0;border:0;background:none;color:var(--fg-dim);border-radius:9px;
+  padding:10px 6px;font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:.18s;
+}
+.seg button.on{background:linear-gradient(135deg,#5B78FF,#4D6BFE);color:#fff;
+  box-shadow:0 5px 14px rgba(77,107,254,.3)}
+.seg-sub{margin:9px 0 0;font-size:11.5px;color:var(--fg-faint);line-height:1.55}
+
+.switch-row{display:flex;align-items:center;justify-content:space-between;gap:14px;
+  background:rgba(0,0,0,.3);border:1px solid var(--line);border-radius:var(--r-md);padding:13px 14px}
+.switch-row .t{font-size:14px;font-weight:550}
+.switch-row .d{font-size:11.5px;color:var(--fg-faint);margin-top:3px;line-height:1.5}
+.sw{flex:0 0 auto;width:48px;height:28px;border-radius:999px;border:0;padding:0;cursor:pointer;
+  background:rgba(255,255,255,.14);position:relative;transition:background .22s}
+.sw::after{content:"";position:absolute;top:3px;left:3px;width:22px;height:22px;border-radius:50%;
+  background:#fff;transition:transform .22s var(--ease);box-shadow:0 2px 6px rgba(0,0,0,.4)}
+.sw.on{background:linear-gradient(135deg,#5B78FF,#4D6BFE)}
+.sw.on::after{transform:translateX(20px)}
+
+.about{font-size:11.5px;color:var(--fg-faint);text-align:center;margin:18px 0 0;line-height:1.6}
+
+/* ---------- Toast ---------- */
+#toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom,0px) + 34px);
+  transform:translate(-50%,20px);z-index:40;opacity:0;pointer-events:none;
+  background:rgba(20,24,34,.96);border:1px solid var(--line-strong);color:var(--fg);
+  padding:11px 18px;border-radius:999px;font-size:13px;max-width:84vw;text-align:center;
+  box-shadow:0 14px 34px rgba(0,0,0,.5);transition:opacity .22s,transform .22s var(--ease)}
+#toast.on{opacity:1;transform:translate(-50%,0)}
+
+@keyframes fade{from{opacity:0}to{opacity:1}}
+
+/* ============================================================
+   断点 1 —— 手机横向 / 小平板（≥600px）：卡片加宽，提示并排
+   ============================================================ */
+@media (min-width:600px){
+  :root{--pad:28px}
+  .card{max-width:520px;padding:28px 26px}
+}
+
+/* ============================================================
+   断点 2 —— 平板 / 横屏（≥820px）：双列，左侧品牌陈述常驻
+   ============================================================ */
+@media (min-width:820px){
+  :root{--pad:40px}
+  .stage{
+    display:grid;grid-template-columns:minmax(0,1.05fr) minmax(400px,470px);
+    align-items:center;gap:60px;max-width:1180px;margin:0 auto;width:100%;
+    overflow:hidden;
+  }
+  /* 双列时改由网格居中，取消窄屏的 margin:auto 整体居中 */
+  .hero{margin-top:0;justify-content:center;gap:26px}
+  .panel{margin-bottom:0}
+  .hero-detail{display:flex;flex-direction:column;gap:16px;margin-top:4px}
+  .mark{width:60px;height:60px}
+  .brand-text h1{font-size:29px;letter-spacing:-.4px}
+  .brand-text p{font-size:14px;margin-top:6px}
+  .panel{display:flex;align-items:center;justify-content:flex-end}
+  .card{max-width:470px;padding:30px 28px;border-radius:28px}
+  .connecting,.err-body{text-align:left}
+  .connecting{align-items:flex-start}
+  body.is-modal .stage{display:flex;align-items:center;justify-content:center;gap:0}
+}
+
+/* ============================================================
+   断点 3 —— 大平板 / 桌面模式（≥1280px）：更宽的留白与字号
+   ============================================================ */
+@media (min-width:1280px){
+  .stage{grid-template-columns:minmax(0,1.15fr) minmax(440px,500px);gap:88px;max-width:1320px}
+  .brand-text h1{font-size:33px}
+  .card{max-width:500px;padding:34px 32px}
+}
+
+/* ============================================================
+   设置浮层形态：手机=底部抽屉；平板=居中卡片
+   ============================================================ */
+body.is-modal .stage{
+  display:flex;align-items:flex-end;justify-content:center;
+  padding:0;overflow:hidden;
+}
+/* 浮层必须压在遮罩之上，否则卡片会被 backdrop-filter 一起糊掉。
+   stage 自身不接事件：点卡片外的地方穿透到遮罩 → 关闭；只有卡片可交互。 */
+body.is-modal .stage{z-index:10;pointer-events:none}
+body.is-modal .card{pointer-events:auto}
+body.is-modal .hero{display:none}
+body.is-modal .panel{margin-bottom:0;align-items:flex-end;justify-content:center;width:100%}
+body.is-modal .card{
+  max-width:100%;border-radius:var(--r-xl) var(--r-xl) 0 0;
+  padding:24px 22px calc(env(safe-area-inset-bottom,0px) + 26px);
+  animation:slideUp .3s var(--ease) both;
+}
+@keyframes slideUp{from{transform:translateY(100%)}to{transform:translateY(0)}}
+
+@media (min-width:600px){
+  body.is-modal .panel{align-items:center}
+  body.is-modal .card{
+    max-width:520px;border-radius:var(--r-xl);
+    padding:26px 24px;animation:pop .26s var(--ease) both;
+  }
+  @keyframes pop{from{opacity:0;transform:scale(.93)}to{opacity:1;transform:none}}
+}
+
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation-duration:.01ms !important;transition-duration:.01ms !important}
+}
+</style>
+</head>
+<body>
+
+<div class="bg"><div class="grid"></div></div>
+<div class="scrim" onclick="Shell.dismiss()"></div>
+
+<main class="stage">
+
+  <!-- 品牌区：手机上只显示紧凑版，≥820px 展开陈述 -->
+  <section class="hero">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 48 48" aria-hidden="true">
+        <defs>
+          <linearGradient id="mg" x1="0" y1="0" x2="1" y2="1">
+            <stop offset="0" stop-color="#6EE7F9"/><stop offset=".5" stop-color="#5B78FF"/>
+            <stop offset="1" stop-color="#3E5BF0"/>
+          </linearGradient>
+        </defs>
+        <rect x="2" y="2" width="44" height="44" rx="13" fill="url(#mg)"/>
+        <path d="M16 18.5l6.2 5.5-6.2 5.5" fill="none" stroke="#fff" stroke-width="3.1"
+              stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M26.5 29.5H33" fill="none" stroke="#fff" stroke-width="3.1" stroke-linecap="round"/>
+      </svg>
+      <div class="brand-text">
+        <h1>DSH 口袋</h1>
+        <p>DeepSeek Harness · 远程终端</p>
+      </div>
+    </div>
+
+    <div class="hero-detail">
+      <div class="feature"><span class="dot">◆</span>
+        <span><b>同一块屏幕</b><br>手机打开的界面就是你 Mac 上的界面，流式输出实时同步。</span></div>
+      <div class="feature"><span class="dot">◇</span>
+        <span><b>双向可操作</b><br>发任务、看输出、点审批，出门在外也能推进 agent。</span></div>
+      <div class="feature"><span class="dot">◈</span>
+        <span><b>不过第三方</b><br>直连你自己 Mac 上的 dsh-pocket 端口，不经过任何中转服务器。</span></div>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="card">
+
+      <!-- ========== 1. 连接配置 ========== -->
+      <div class="screen on" id="s-connect">
+        <h2>连接你的 Mac</h2>
+        <p class="sub">填 dsh-pocket 的入口地址。不确定？在 Mac 上打开
+          <b>设置 → 手机访问</b>，复制二维码下面那串链接。</p>
+
+        <div class="field">
+          <label for="url">入口地址</label>
+          <div class="input-wrap">
+            <input id="url" type="url" inputmode="url" spellcheck="false"
+                   autocapitalize="off" autocorrect="off"
+                   placeholder="http://192.168.0.91:3081">
+            <button class="icon-btn" onclick="Shell.paste()">粘贴</button>
+          </div>
+        </div>
+
+        <div class="chips" id="chips"></div>
+
+        <button class="btn btn-primary" id="go" onclick="Shell.connect()">
+          <span>连接</span>
+        </button>
+
+        <p class="hint">地址形如 <code>http://192.168.x.x:3081</code>。
+          同一 WiFi 用局域网地址最快；不在同一网络时用 Tailscale 地址
+          <code>100.x.x.x:3081</code>。</p>
+      </div>
+
+      <!-- ========== 2. 连接中 ========== -->
+      <div class="screen" id="s-connecting">
+        <div class="connecting">
+          <div class="ring">
+            <svg viewBox="0 0 62 62">
+              <defs><linearGradient id="spinGrad" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#6EE7F9"/><stop offset="1" stop-color="#4D6BFE"/>
+              </linearGradient></defs>
+              <circle class="track" cx="31" cy="31" r="26"/>
+              <circle class="arc" cx="31" cy="31" r="26"/>
+            </svg>
+          </div>
+          <h2>正在连接</h2>
+          <p class="sub" id="connect-sub">正在握手…</p>
+          <div class="steps">
+            <div class="step" id="step-1"><span class="tick">✓</span><span>探测 Mac 上的 dsh-pocket</span></div>
+            <div class="step" id="step-2"><span class="tick">✓</span><span>换取会话凭据</span></div>
+            <div class="step" id="step-3"><span class="tick">✓</span><span>载入 DSH 界面</span></div>
+          </div>
+          <div class="row" style="width:100%">
+            <button class="btn btn-ghost" onclick="Shell.show('connect')">取消</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ========== 3. 连接失败 ========== -->
+      <div class="screen" id="s-error">
+        <div class="err-body">
+          <div class="err-icon">⚠</div>
+          <div class="err-code" id="err-code">ERROR</div>
+          <h2 id="err-title">连不上 Mac</h2>
+          <p class="sub" id="err-detail">—</p>
+        </div>
+        <div class="row">
+          <button class="btn btn-primary" onclick="Shell.retry()">重试</button>
+          <button class="btn btn-ghost" onclick="Shell.show('connect')">改地址</button>
+        </div>
+        <div class="tips">
+          <h4>排查清单</h4>
+          <ul>
+            <li>Mac 上 <code>dsh web</code> 是否在运行（终端里能看到 <code>http://127.0.0.1:3080</code>）</li>
+            <li>手机和 Mac 是否在同一 WiFi / 同一 Tailscale 网络</li>
+            <li>Mac 设置页「手机访问」里的<b>局域网访问</b>开关是否开着</li>
+            <li>地址里的端口是不是 <code>3081</code>（不是 3080）</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- ========== 4. 设置 ========== -->
+      <div class="screen" id="s-settings">
+        <div class="sheet-head">
+          <h2>设置</h2>
+          <button class="close" onclick="Shell.dismiss()" aria-label="关闭">✕</button>
+        </div>
+
+        <div class="set-group">
+          <label>入口地址</label>
+          <div class="set-val">
+            <span class="v" id="set-url">—</span>
+            <button class="icon-btn" onclick="Shell.show('connect')">更改</button>
+          </div>
+        </div>
+
+        <div class="set-group">
+          <label>界面布局</label>
+          <div class="seg" id="seg-layout">
+            <button data-v="auto" onclick="Shell.layout('auto')">自动</button>
+            <button data-v="mobile" onclick="Shell.layout('mobile')">手机</button>
+            <button data-v="desktop" onclick="Shell.layout('desktop')">宽屏</button>
+          </div>
+          <p class="seg-sub" id="layout-sub">自动：窄屏用抽屉布局，≥1024px 用电脑布局，平板会自动切换。</p>
+        </div>
+
+        <div class="set-group">
+          <label>连接</label>
+          <div class="switch-row">
+            <div>
+              <div class="t">屏幕常亮</div>
+              <div class="d">看 agent 跑长任务时不让屏幕熄灭</div>
+            </div>
+            <button class="sw" id="sw-awake" onclick="Shell.awake()" aria-label="屏幕常亮"></button>
+          </div>
+        </div>
+
+        <div class="row">
+          <button class="btn btn-ghost" onclick="Shell.reconnect()">重新握手</button>
+          <button class="btn btn-danger" onclick="Shell.logout()">清除登录</button>
+        </div>
+
+        <p class="about">DSH 口袋 1.0.0 · 直连本机 dsh-pocket，无中转</p>
+      </div>
+
+    </div>
+  </section>
+</main>
+
+<div id="toast"></div>
+
+<script>
+/* ============================================================
+   外壳控制器 —— 由原生侧通过 window.Shell.open(mode,payload) 驱动
+   与原生之间只走 DshNative 这个极窄桥（无破坏性方法）
+   ============================================================ */
+var Shell = (function () {
+  var el = function (id) { return document.getElementById(id); };
+  var current = 'connect';
+  var lastUrl = '';
+  var lastRetry = false;
+
+  function has() { return typeof DshNative !== 'undefined' && DshNative !== null; }
+  function call(fn, arg1) {
+    if (!has() || typeof DshNative[fn] !== 'function') { return null; }
+    try { return arg1 === undefined ? DshNative[fn]() : DshNative[fn](arg1); }
+    catch (e) { return null; }
+  }
+  function parse(s) { try { return JSON.parse(s); } catch (e) { return null; } }
+
+  function show(name) {
+    current = name;
+    var all = document.querySelectorAll('.screen');
+    for (var i = 0; i < all.length; i++) { all[i].classList.remove('on'); }
+    var target = el('s-' + name);
+    if (target) { target.classList.add('on'); }
+    /* 连接页/连接中/错误页 = 全屏外壳；设置 = 浮层 */
+    var modal = (name === 'settings');
+    document.body.classList.toggle('is-modal', modal);
+    document.body.classList.toggle('is-full', !modal);
+    if (name === 'connect') { syncConnect(); }
+    if (name === 'settings') { syncSettings(); }
+    window.scrollTo(0, 0);
+  }
+
+  function syncConnect() {
+    var p = parse(call('prefs'));
+    var url = (p && p.url) ? p.url : '';
+    lastUrl = url;
+    var input = el('url');
+    if (url && !input.value) { input.value = url; }
+    renderChips(p);
+  }
+
+  function renderChips(p) {
+    var box = el('chips');
+    if (!p || !p.quick || !p.quick.length) { box.innerHTML = ''; return; }
+    var html = '';
+    for (var i = 0; i < p.quick.length; i++) {
+      var q = p.quick[i];
+      var on = (p.url === q.url) ? ' on' : '';
+      html += '<button class="chip' + on + '" onclick="Shell.pick(\'' + q.url + '\')">'
+            + '<span style="opacity:.6">' + q.tag + '</span> ' + q.short + '</button>';
+    }
+    box.innerHTML = html;
+  }
+
+  function syncSettings() {
+    var p = parse(call('prefs'));
+    if (!p) { return; }
+    el('set-url').textContent = p.url || '未设置';
+    var btns = document.querySelectorAll('#seg-layout button');
+    for (var i = 0; i < btns.length; i++) {
+      btns[i].classList.toggle('on', btns[i].getAttribute('data-v') === p.layout);
+    }
+    el('sw-awake').classList.toggle('on', !!p.keepAwake);
+    el('layout-sub').textContent = p.layoutHint || '';
+  }
+
+  function pick(url) {
+    el('url').value = url;
+    var chips = document.querySelectorAll('#chips .chip');
+    for (var i = 0; i < chips.length; i++) { chips[i].classList.remove('on'); }
+    if (typeof event !== 'undefined' && event && event.currentTarget) {
+      event.currentTarget.classList.add('on');
+    }
+  }
+
+  function connect() {
+    var v = el('url').value;
+    if (!v || !v.replace(/\s/g, '')) { toast('请先填写入口地址'); return; }
+    call('connect', v);
+  }
+
+  function paste() {
+    var t = call('paste');
+    if (t && String(t).length) {
+      el('url').value = String(t).trim();
+      toast('已粘贴');
+    } else {
+      toast('剪贴板是空的');
+    }
+  }
+
+  function retry() { call('retry'); }
+  function reconnect() { call('reconnect'); }
+  function dismiss() { call('dismiss'); }
+  function logout() { call('logout'); }
+  function layout(v) { call('layout', v); }
+  function awake() { call('awake'); }
+
+  /* ---- 原生 → 外壳 ---- */
+  function open(mode, payload) {
+    var p = parse(payload);
+    if (mode === 'connecting') {
+      var s = (p && p.status) ? p.status : '正在握手…';
+      el('connect-sub').textContent = s;
+      setStep((p && p.step) ? p.step : 1);
+    } else if (mode === 'error') {
+      el('err-code').textContent = (p && p.code) ? p.code : 'ERROR';
+      el('err-title').textContent = (p && p.title) ? p.title : '连不上 Mac';
+      el('err-detail').textContent = (p && p.detail) ? p.detail : '';
+    } else if (mode === 'toast') {
+      toast((p && p.text) ? p.text : '');
+      return;
+    } else if (mode === 'status') {
+      el('connect-sub').textContent = (p && p.status) ? p.status : '';
+      if (p && p.step) { setStep(p.step); }
+      return;
+    }
+    show(mode);
+  }
+
+  function setStep(n) {
+    for (var i = 1; i <= 3; i++) {
+      var s = el('step-' + i);
+      if (!s) { continue; }
+      s.classList.toggle('done', i < n);
+      s.classList.toggle('act', i === n);
+    }
+  }
+
+  var toastTimer = null;
+  function toast(text) {
+    if (!text) { return; }
+    var t = el('toast');
+    t.textContent = text;
+    t.classList.add('on');
+    if (toastTimer) { clearTimeout(toastTimer); }
+    toastTimer = setTimeout(function () { t.classList.remove('on'); }, 2000);
+  }
+
+  /* 输入框回车即连接 */
+  document.addEventListener('DOMContentLoaded', function () {
+    var input = el('url');
+    input.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.keyCode === 13) { e.preventDefault(); connect(); }
+    });
+  });
+
+  return {
+    open: open, show: show, connect: connect, paste: paste, pick: pick,
+    retry: retry, reconnect: reconnect, dismiss: dismiss, logout: logout,
+    layout: layout, awake: awake, toast: toast
+  };
+})();
+</script>
+</body>
+</html>

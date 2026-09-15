@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      纯 framework 主题，不依赖 AppCompat。
+      Android 15 强制 edge-to-edge，statusBarColor 会被忽略——状态栏/导航栏图标颜色
+      由 Compose 侧（DshTheme 里的 WindowCompat）按暗色/浅色主题动态设置。
+      这里只给一个浅色 UI 的初值，避免启动瞬间闪白图标。
+    -->
+    <style name="AppTheme" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@android:color/white</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+</resources>

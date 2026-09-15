@@ -26,6 +26,29 @@ window.__ModuleLoader__.load({
 
     const TAILSCALE_DOWNLOAD = 'https://tailscale.com/download';
 
+    /**
+     * App 下载地址。
+     *
+     * 资产名**不带版本号**：GitHub 的 `latest/download/<name>` 只在请求时解析
+     * latest，文件名是照字面取的 —— 名字里带版本的话，发下一版当天就 404，
+     * 而且不会有人察觉。详见收录指南里那条警告。
+     */
+    const APP_APK_URL = 'https://github.com/xiazhi88/dsh-lan/releases/latest/download/dsh-lan-app.apk';
+    const APP_RELEASES_URL = 'https://github.com/xiazhi88/dsh-lan/releases/latest';
+    const APP_VERSION = '3.0.0';
+
+    /**
+     * 够宽才显示二维码。
+     *
+     * 二维码的用处是「把手机带到这一页」—— 站在手机上时它毫无意义，只占地方。
+     * 宽度够（电脑 / 平板 / 横屏）才给。
+     */
+    const SHOW_QR = (typeof window !== 'undefined') && window.innerWidth >= 640;
+
+    /** 已经站在一台 Android 上？决定这一区是「直接下载」还是「先去手机上打开」。 */
+    const IS_ANDROID = (typeof navigator !== 'undefined')
+      && /android/i.test(String(navigator.userAgent || ''));
+
     const ZH = (typeof navigator !== 'undefined' && String(navigator.language || '').toLowerCase().startsWith('zh'));
     const L = (zh, en) => (ZH ? zh : en);
 
@@ -169,12 +192,92 @@ window.__ModuleLoader__.load({
       }
     }
 
+    /**
+     * 把后端生成的 SVG 缩放成指定边长再塞进 DOM。
+     *
+     * qrcode 库产出的是固定 240×240 的 `<svg>`，直接放进版面会过大；
+     * 这里只改它的 width/height 属性，viewBox 不动 —— 图形本身照旧清晰。
+     * SVG 是我们自己生成的，内容可控，不存在注入问题。
+     */
+    function qrNode(svg, size) {
+      const scaled = String(svg)
+        .replace(/width="[^"]*"/, 'width="' + size + '"')
+        .replace(/height="[^"]*"/, 'height="' + size + '"');
+      return h('div', {
+        style: {
+          flex: '0 0 auto',
+          width: size,
+          height: size,
+          padding: 4,
+          background: '#fff',
+          borderRadius: 6,
+          border: '1px solid ' + C.border,
+          lineHeight: 0,
+        },
+        dangerouslySetInnerHTML: { __html: scaled },
+      });
+    }
+
     function AddressRow(props) {
       const url = props.url;
+      const svg = props.qr ? props.qr[url] : null;
       return h('div', { style: styles.row },
-        h('span', { style: styles.addr }, url),
+        h('div', { style: { display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 } },
+          SHOW_QR && svg ? qrNode(svg, 92) : null,
+          h('span', { style: styles.addr }, url),
+        ),
         h('button', { style: styles.btn, onClick: () => props.onCopy(url) },
           props.copied === url ? L('已复制', 'Copied') : L('复制', 'Copy')),
+      );
+    }
+
+    /**
+     * 「手机 App」卡片。
+     *
+     * 分两种情形，因为用户在哪儿看这一页决定了下一步完全不一样：
+     *   · 已经在手机上 → 直接下载装，最顺
+     *   · 在电脑上     → 先把局域网地址给他，让他去手机浏览器打开同一页
+     */
+    function AppCard(props) {
+      const lanUrl = (props.lan && props.lan.length > 0) ? props.lan[0] : null;
+
+      return h('div', { style: styles.card },
+        h('div', { style: styles.head },
+          h('div', { style: styles.title }, L('手机 App', 'Mobile app')),
+          h('span', { style: { ...styles.badge, color: C.brand, borderColor: C.brand } },
+            'v' + APP_VERSION),
+        ),
+
+        h('div', { style: styles.muted },
+          L('装这个 App 比用浏览器顺手：输入法不会挡住输入框、能上传附件、会话回答完会推送通知、随时可切换入口地址。',
+            'The app is smoother than a browser: the keyboard never covers the input, attachments work, finished turns push a notification, and you can switch the entry address anytime.')),
+
+        // 直接下载 —— 手机上才给按钮，电脑上点了也装不了
+        IS_ANDROID
+          ? h('a', {
+              href: APP_APK_URL,
+              style: { ...styles.btn, display: 'inline-block', marginTop: 10, textDecoration: 'none' },
+            }, L('下载 APK（约 1.4 MB）', 'Download APK (about 1.4 MB)'))
+          : h('div', null,
+              h('div', { style: styles.muted },
+                L('在手机浏览器里打开下面这个地址，回到同一页就能下载：',
+                  'Open this address in your phone browser and come back to this page to download:')),
+              lanUrl
+                ? h(AddressRow, { url: lanUrl, copied: props.copied, onCopy: props.onCopy })
+                : h('div', { style: styles.muted },
+                    L('（先把上面的地址填进手机）', '(Use the address above on your phone)')),
+            ),
+
+        h('div', { style: styles.muted },
+          L('Android 10 及以上。安装时系统会提示「未知来源」—— 允许即可，这个 App 没有上架应用商店。',
+            'Android 10 or newer. Android will warn about an unknown source — allow it; the app is not on any store.')),
+
+        h('a', {
+          href: APP_RELEASES_URL,
+          target: '_blank',
+          rel: 'noreferrer',
+          style: styles.link,
+        }, L('查看全部版本 →', 'All releases →')),
       );
     }
 
@@ -199,7 +302,7 @@ window.__ModuleLoader__.load({
               h('div', { style: styles.muted },
                 L('检测到 Tailscale 地址。手机连上同一个 Tailscale 账号后，在任何网络下都能用这个地址。',
                   'Tailscale detected. Once your phone joins the same tailnet, this address works on any network.')),
-              tailscale.map((url) => h(AddressRow, { key: url, url, copied: props.copied, onCopy: props.onCopy })),
+              tailscale.map((url) => h(AddressRow, { key: url, url, qr: props.qr, copied: props.copied, onCopy: props.onCopy })),
             )
 
           : h('div', null,
@@ -260,6 +363,7 @@ window.__ModuleLoader__.load({
       };
 
       const all = (info && Array.isArray(info.addresses)) ? info.addresses : [];
+      const qr = (info && info.qrcodes) ? info.qrcodes : {};
       const tailscale = (info && Array.isArray(info.tailscale)) ? info.tailscale : [];
       const tsSet = {};
       tailscale.forEach((u) => { tsSet[u] = true; });
@@ -277,6 +381,10 @@ window.__ModuleLoader__.load({
         // 局域网地址
         h('div', { style: styles.card },
           h('div', { style: styles.title }, L('地址', 'Addresses')),
+          SHOW_QR
+            ? h('div', { style: styles.muted },
+                L('手机相机扫一下就能打开，不用手敲 IP。', 'Scan with your phone camera — no need to type the IP.'))
+            : null,
 
           error
             ? h('div', { style: { ...styles.muted, color: C.err } },
@@ -299,11 +407,14 @@ window.__ModuleLoader__.load({
                   'No non-loopback interface found — check the network connection.'))
             : null,
 
-          lan.map((url) => h(AddressRow, { key: url, url, copied, onCopy })),
+          lan.map((url) => h(AddressRow, { key: url, url, qr, copied, onCopy })),
         ),
 
+        // 手机 App 下载
+        error ? null : h(AppCard, { lan, qr, copied, onCopy }),
+
         // 公网访问（有 Tailscale 就报喜，没有就给安装步骤）
-        error ? null : h(RemoteCard, { tailscale, copied, onCopy }),
+        error ? null : h(RemoteCard, { tailscale, copied, onCopy, qr }),
 
         // 状态
         h('div', { style: styles.card },

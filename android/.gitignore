@@ -1,0 +1,15 @@
+# 构建产物
+build/
+app/build/
+.gradle/
+.kotlin/
+*.apk
+*.aab
+
+# 机器相关：本地 Android SDK 路径
+local.properties
+
+# IDE / 系统
+.idea/
+*.iml
+.DS_Store

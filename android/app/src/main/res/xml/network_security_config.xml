@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  允许明文 HTTP：dsh-pocket 的局域网入口是 http://<Mac-IP>:3081。
+  Android 9(API 28) 起默认禁明文，不开这个 WebView 会直接 ERR_CLEARTEXT_NOT_PERMITTED。
+  这里用 base-config 全放行（地址是用户自填的任意内网 IP/Tailscale IP，无法预先枚举域名）。
+-->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="true">
+        <trust-anchors>
+            <certificates src="system" />
+            <certificates src="user" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>

@@ -1,0 +1,229 @@
+package com.dsh.remote.data
+
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
+import okhttp3.WebSocket
+import okhttp3.WebSocketListener
+import org.json.JSONArray
+import org.json.JSONObject
+import java.util.UUID
+import java.util.concurrent.TimeUnit
+
+/**
+ * 与 DSH 说话 —— 只为一件事：**知道哪个会话跑完了**。
+ *
+ * DSH 界面里已经有会话列表、附件、审批，客户端不重复。但「跑完了推个通知」这件事
+ * 页面做不到（页面在后台会被系统挂起），必须由原生侧维持一条连接。
+ *
+ * ## 两条通路
+ *
+ * **一元**：`POST /api/<ns>/<method>`，信封 `{type:'client-request', rpcId, method, payload:{args}}`。
+ * 只用来在启动时拉一次全量会话，拿到 id→标题 的对照表（事件里不带标题）。
+ *
+ * **事件流**：`ws://…/api/remote.mux`，发 `{type:'open', streamId, endpoint:'$events', payload:{args:{}}}`。
+ * 服务端推的逻辑帧有三种：
+ * ```
+ * {type:'ready',     clientId, host}                       ← 通路就绪
+ * {type:'emit',      event, args}                          ← 单向广播，不用回
+ * {type:'waterfall', event, eventId, agentId, request}     ← 必须回执
+ * ```
+ *
+ * ## 为什么 waterfall 必须回执
+ *
+ * `approval/request`（工具审批）是 waterfall 模式：宿主会等每个订阅者表态。
+ * 会话内的 DSH 网页本来就在订阅同一条流 —— 原生侧再订一条却**不回执**的话，
+ * 宿主的 waterfall 会一直挂着，**把用户的审批卡住**。
+ *
+ * 所以这里对每个 waterfall 帧立刻回 `{kind:'next'}`（「我不处理，链条继续」），
+ * 走 `POST /api/$events/result`。这样它只是旁观，永远不抢网页的活。
+ */
+class DshApi(private val baseUrlProvider: () -> String) {
+
+    private val client: OkHttpClient = OkHttpClient.Builder()
+        .cookieJar(WebViewCookies)
+        .connectTimeout(10, TimeUnit.SECONDS)
+        .readTimeout(20, TimeUnit.SECONDS)
+        .pingInterval(20, TimeUnit.SECONDS)   // 保活，防 NAT 静默断链
+        .build()
+
+    private val base: String get() = baseUrlProvider().trimEnd('/')
+
+    // ------------------------------------------------------------------
+    // 启动时的一次性快照
+    // ------------------------------------------------------------------
+
+    /** 会话的静态信息：标题，以及当前是否在跑。 */
+    data class Snapshot(
+        val titles: Map<String, String>,
+        val running: Set<String>,
+    )
+
+    /**
+     * 拉一次全量会话。
+     *
+     * 事件流里 `api-session/status` 只带 `(sessionId, running)`，**没有标题** ——
+     * 通知要说「『检查库存字段』跑完了」，就得先有这张对照表。
+     * 之后靠 `api-session/added` 增量补。
+     */
+    suspend fun snapshot(): Snapshot = withContext(Dispatchers.IO) {
+        val value = unary("session/list", JSONObject().put("_request", JSONObject()))
+        val items: JSONArray = value.optJSONArray("items") ?: JSONArray()
+
+        val titles = HashMap<String, String>(items.length())
+        val running = HashSet<String>()
+        for (i in 0 until items.length()) {
+            val s = items.optJSONObject(i) ?: continue
+            val id = s.str("sessionId")
+            if (id.isEmpty()) continue
+            val title = s.optJSONObject("projections")
+                ?.optJSONObject("values")
+                ?.str("title")
+                .orEmpty()
+            if (title.isNotEmpty()) titles[id] = title
+            if (s.optBoolean("running", false)) running.add(id)
+        }
+        Snapshot(titles, running)
+    }
+
+    private fun unary(endpoint: String, args: JSONObject): JSONObject {
+        val envelope = JSONObject()
+            .put("type", "client-request")
+            .put("rpcId", UUID.randomUUID().toString())
+            .put("method", endpoint)
+            .put("payload", JSONObject().put("args", args))
+
+        val request = Request.Builder()
+            .url("$base/api/$endpoint")
+            .post(envelope.toString().toRequestBody(JSON))
+            .header("Accept", "application/json")
+            .build()
+
+        client.newCall(request).execute().use { resp: Response ->
+            val text = resp.body?.string().orEmpty()
+            val json = runCatching { JSONObject(text) }.getOrNull()
+                ?: throw DshApiException("bad-json", "HTTP ${resp.code}：${text.take(120)}")
+            val result = json.optJSONObject("result")
+                ?: throw DshApiException("bad-envelope", text.take(120))
+            if (!result.optBoolean("ok", false)) {
+                val err = result.optJSONObject("error")
+                throw DshApiException(
+                    err?.str("code").orEmpty().ifEmpty { "unknown" },
+                    err?.str("message").orEmpty().ifEmpty { "未知错误" },
+                )
+            }
+            return result.optJSONObject("value") ?: JSONObject()
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // 事件流
+    // ------------------------------------------------------------------
+
+    interface EventSink {
+        /** 通路建立。 */
+        fun onReady()
+
+        /** 单向广播。`args` 是事件参数数组。 */
+        fun onEmit(event: String, args: JSONArray)
+
+        /** 连接断开（重连由调用方负责）。 */
+        fun onDown(reason: String)
+    }
+
+    /** 打开 `$events`。断开后 [EventSink.onDown] 会回调，隔几秒再调一次即可。 */
+    fun openEvents(sink: EventSink): EventStream {
+        val url = base.replaceFirst("http", "ws") + "/api/remote.mux"
+        var clientId: String? = null
+
+        val ws = client.newWebSocket(
+            Request.Builder().url(url).build(),
+            object : WebSocketListener() {
+
+                override fun onOpen(webSocket: WebSocket, response: Response) {
+                    val frame = JSONObject()
+                        .put("type", "open")
+                        .put("streamId", "dsh-watch")
+                        .put("endpoint", "\$events")
+                        .put("payload", JSONObject().put("args", JSONObject()))
+                    webSocket.send(frame.toString())
+                }
+
+                override fun onMessage(webSocket: WebSocket, text: String) {
+                    val outer = runCatching { JSONObject(text) }.getOrNull() ?: return
+                    if (outer.str("type") != "item") return
+                    val v = outer.optJSONObject("value") ?: return
+
+                    when (v.str("type")) {
+                        "ready" -> {
+                            clientId = v.str("clientId").ifEmpty { null }
+                            sink.onReady()
+                        }
+
+                        "emit" -> {
+                            val event = v.str("event")
+                            val args = v.optJSONArray("args") ?: JSONArray()
+                            sink.onEmit(event, args)
+                        }
+
+                        "waterfall" -> {
+                            // 关键：立刻表态「不处理，继续」，否则宿主会一直等我们 → 卡住审批
+                            val cid = clientId
+                            val eventId = v.str("eventId")
+                            if (cid != null && eventId.isNotEmpty()) replyNext(cid, eventId)
+                        }
+                    }
+                }
+
+                override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+                    sink.onDown(t.message ?: "连接中断")
+                }
+
+                override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+                    sink.onDown("事件流已关闭")
+                }
+            },
+        )
+        return EventStream(ws)
+    }
+
+    /** 回执 waterfall：「我不处理，链条继续」。绝不能占着主线程。 */
+    private fun replyNext(clientId: String, eventId: String) {
+        Thread({
+            runCatching {
+                unary(
+                    "\$events/result",
+                    JSONObject()
+                        .put("clientId", clientId)
+                        .put("eventId", eventId)
+                        .put("outcome", JSONObject().put("kind", "next")),
+                )
+            }
+        }, "dsh-event-reply").start()
+    }
+
+    class EventStream internal constructor(private val ws: WebSocket) {
+        fun close() {
+            runCatching {
+                ws.send(JSONObject().put("type", "cancel").put("streamId", "dsh-watch").toString())
+                ws.close(1000, "bye")
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+
+    private companion object {
+        val JSON = "application/json; charset=utf-8".toMediaType()
+    }
+}
+
+class DshApiException(val code: String, override val message: String) : Exception(message)
+
+/** JSON 的 null 安全取值：`optString` 遇到 JSON null 会返回字符串 "null"。 */
+internal fun JSONObject.str(key: String): String =
+    if (isNull(key)) "" else optString(key).orEmpty()
