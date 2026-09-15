@@ -8,6 +8,10 @@
 #   dist            只放 version.json（小、每次覆盖）
 #   dist-v<版本>    放 dshgo-app.apk（不可变 → jsDelivr 永久缓存，快且稳）
 #
+# ★ 顺序很重要：必须在 gh release create **之前**跑这个脚本（或者至少让它
+#   先把 version.json 提交推送）。gh release create 会给提交打 tag，
+#   而 App 读的是 @latest/version.json —— tag 里没有就会查不到更新。
+#
 # 用法：
 #   tools/publish-dist.sh <版本> <APK路径> [发布说明]
 #
@@ -33,6 +37,28 @@ MANIFEST_URL="${CDN}@dist/version.json"
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
+
+# ★ 先把 version.json 写进 main 并推送 —— 必须在 release 打 tag **之前**，
+#   因为 App 读的是 jsDelivr 的 @latest/version.json（@latest 解析到最新 tag）。
+#   顺序错了的话，tag 里就没有这次的新版本，App 也就查不到更新。
+echo "▸ 更新仓库根的 version.json（供 @latest/version.json 读取）"
+cat > "$ROOT/version.json" <<JSON
+{
+  "version": "${VER}",
+  "apk": "${APK_URL}",
+  "apkFallback": "${GH_URL}",
+  "notes": $(printf '%s' "$NOTES" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')
+}
+JSON
+git -C "$ROOT" add version.json
+if git -C "$ROOT" diff --cached --quiet; then
+  echo "    内容没变，跳过"
+else
+  git -C "$ROOT" -c user.name=dshgo -c user.email=dshgo@local \
+    commit -q -m "chore: version.json → ${VER}"
+  git -C "$ROOT" -c "http.https://github.com.proxy=http://127.0.0.1:7890" push -q origin main
+  echo "    已提交并推送"
+fi
 
 echo "▸ 准备 dist 分支"
 git fetch -q origin dist 2>/dev/null || true
@@ -67,11 +93,14 @@ echo "▸ 推送 dist 分支"
 git -C "$D" -c "http.https://github.com.proxy=http://127.0.0.1:7890" \
   push -q --force origin HEAD:dist
 
-echo "▸ 建 dist-v${VER} 标签并放 APK"
-# 标签用一个独立提交：只含 APK，且不可变 —— jsDelivr 对它永久缓存
+echo "▸ 建 dist-v${VER} 标签并放 APK + 清单"
+# 标签用独立提交、不可变 —— jsDelivr 永久缓存。
+# 这里**同时放一份 version.json**：jsDelivr 的 @latest 究竟解析到哪一个最新 tag
+# 取决于它是按 release 还是按 tag 时间排的，两处都放就不用去猜这个规则。
 T="$TMP/tag"
 git worktree add -q --detach "$T"
 cp "$APK" "$T/dshgo-app.apk"
+cp "$ROOT/version.json" "$T/version.json" 2>/dev/null || true
 ( cd "$T" && git add -A && git -c user.name=dshgo -c user.email=dshgo@local \
     commit -q -m "apk: v${VER}" )
 git -C "$T" tag -f "dist-v${VER}" >/dev/null
