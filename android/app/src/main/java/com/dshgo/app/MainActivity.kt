@@ -469,6 +469,15 @@ class MainActivity : ComponentActivity() {
             dshReady = false,
             dshError = null,
         )
+
+        // 通知开着的话，握手之后把事件流（重新）接上。
+        //
+        // 为什么必须在这里做：SessionWatcher 把 baseUrl 用闭包捕获了，改了入口
+        // 地址之后那条流还连着旧机器 —— 界面显示新地址、诊断里却报旧 IP（实测踩过）。
+        // SessionWatcher.start 现在会识别地址变化并重开，但前提是**有人再调它一次**，
+        // 而改地址走的正是 connect → 握手，这里就是那个该调的地方。
+        if (prefs.notifyEnabled()) startWatching()
+
         startLoadTimeout()
         webView.loadUrl(entry)
     }

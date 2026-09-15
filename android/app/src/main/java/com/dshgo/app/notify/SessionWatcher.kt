@@ -81,6 +81,9 @@ object SessionWatcher {
     /** 当前在跑的会话。 */
     private val running = HashSet<String>()
 
+    /** 事件流当前连着的地址。地址一变就必须重开，见 [start]。 */
+    private var currentUrl: String? = null
+
     /**
      * 最近一次事件流断开的原因，null 表示没出过错。
      *
@@ -109,7 +112,18 @@ object SessionWatcher {
 
     @Synchronized
     fun start(context: Context, baseUrl: String) {
-        if (loop?.isActive == true) return
+        // 已经在跑、且地址没变 → 什么都不用做。
+        //
+        // ★ 但**地址变了必须重开**：客户端是 `DshApi { baseUrl }` 把 URL 闭包
+        // 捕获下来的，光改 prefs 不会影响已经在跑的那条流。原来的实现直接
+        // `if (loop?.isActive == true) return`，于是用户改了入口地址之后，
+        // 界面显示新地址、事件流却还连着旧的那台 —— 实测踩过：
+        // 入口写 100.100.190.107，诊断里报的却是 192.168.0.21。
+        if (loop?.isActive == true) {
+            if (currentUrl == baseUrl) return
+            stop()
+        }
+        currentUrl = baseUrl
 
         appContext = context.applicationContext
         load()
@@ -185,6 +199,7 @@ object SessionWatcher {
     fun stop() {
         loop?.cancel()
         loop = null
+        currentUrl = null
         runCatching { stream?.close() }
         stream = null
         api = null
