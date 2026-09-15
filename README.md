@@ -53,22 +53,47 @@ authority 也始终一致。
 
 ## 安装
 
-**两个包各自独立，按需安装：**
+**一个包，装完就有全部功能：**
 
 ```sh
-# 局域网入口（本插件，必须）
 dsh plugin --profile web add github:xiazhi88/dshgo -w
-
-# 手机端布局适配（可选，但手机上没有它体验会差很多）
-dsh plugin --profile web add dsh-web-mobile -w
-
 # 然后重启 dsh web
 ```
 
-> 已发布到 npm 之后第一条可以简写成 `dsh plugin --profile web add dshgo -w`。
+> 已发布到 npm 之后可以简写成 `dsh plugin --profile web add dshgo -w`。
 >
 > `dsh plugin add` 会把声明了 `dsh.bundle` 的包自动加进 profile 的 `bundles`，
 > 所以你不用手改配置文件。
+
+装上就有三件事：**局域网入口**（设置 → 局域网访问，带二维码）、**移动端布局**、
+以及大响应压缩与删除会话。**不需要再装 `dsh-web-mobile`** —— 它的代码已经内联进来了。
+
+### 为什么是内联，而不是依赖它
+
+试过依赖：在本插件的 `cordis.patch.yml` 里多插一行把它挂上。**那条路会炸** ——
+市场的「一键安装」会热挂载插件，读的正是那张补丁，于是它被挂了**两次**：
+
+```
+failed to apply loader entry (dsh-web-mobile):
+locale namespace "mobileNav" already has locale "zh"
+```
+
+这不是插件失效，是**整个 `dsh web` 起不来**，连市场的卸载页都打不开，只能手改文件
+才能恢复。而 `dsh-web-mobile` 的宿主半会 patch `http.ServerResponse.prototype`，
+挂两次是真的有害。
+
+内联后挂载次数完全由我们自己控制，任何安装路径都不会重复。代价是这份代码要随
+上游同步 —— 用 `node tools/vendor-mobile.mjs` 拉新版本，再跑
+`node tools/build-client.mjs` 重新拼产物，然后**实测**一遍。
+
+内联的三块（均为 MIT，已保留原作者版权与
+[LICENSE](client/vendor/LICENSE.dsh-web-mobile)）：
+
+| 位置 | 内容 |
+|---|---|
+| `client/vendor/dsh-web-mobile.js` | 移动端布局（[上游](https://github.com/mexiaosqwq/dsh-web-mobile) 的客户端产物） |
+| `lib/vendor/delete-session.js` | 删除会话的宿主路由（它的客户端会调） |
+| `lib/vendor/compress.js` | 大响应压缩（长会话在手机上是几 MB） |
 
 ### ⚠️ 装完必须重启 `dsh web`
 
