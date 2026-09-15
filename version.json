@@ -2,5 +2,5 @@
   "version": "4.0.3",
   "apk": "https://cdn.jsdelivr.net/gh/xiazhi88/dshgo@dist-v4.0.3/dshgo-app.apk",
   "apkFallback": "https://github.com/xiazhi88/dshgo/releases/latest/download/dshgo-app.apk",
-  "notes": "更新检查：jsDelivr tag 列表 + npmmirror + GitHub 三源取最大；常驻手工下载入口"
+  "notes": "\u66f4\u65b0\u68c0\u67e5\u4e09\u6e90\u53d6\u6700\u5927\uff1b\u5e38\u9a7b\u624b\u5de5\u4e0b\u8f7d\u5165\u53e3"
 }
