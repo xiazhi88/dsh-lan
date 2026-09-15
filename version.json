@@ -2,5 +2,5 @@
   "version": "4.0.1",
   "apk": "https://cdn.jsdelivr.net/gh/xiazhi88/dshgo@dist-v4.0.1/dshgo-app.apk",
   "apkFallback": "https://github.com/xiazhi88/dshgo/releases/latest/download/dshgo-app.apk",
-  "notes": "修更新检查：改用 jsDelivr @latest tag（分支缓存会卡死）"
+  "notes": "\u4fee\u66f4\u65b0\u68c0\u67e5\uff1a\u6539\u7528 jsDelivr @latest tag\uff08\u5206\u652f\u7f13\u5b58\u4f1a\u5361\u6b7b\uff09"
 }
