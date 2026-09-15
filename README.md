@@ -44,19 +44,33 @@ dsh plugin --profile web add dsh-web-mobile -w
 > `dsh plugin add` 会把声明了 `dsh.bundle` 的包自动加进 profile 的 `bundles`，
 > 所以你不用手改配置文件。
 
-装上后它自动挂两件事：
+### 为什么不合成一个包
 
-| | |
-|---|---|
-| **网络桥**（本包） | 把只监听 `127.0.0.1` 的 dsh web 暴露到局域网 |
-| **移动端适配** | [`dsh-web-mobile`](https://www.npmjs.com/package/dsh-web-mobile)（MIT，独立维护）—— 抽屉布局、移动端 CSS、触控优化 |
+试过，是错的，而且失败方式很严重。
 
-第二条是**依赖**，不是 vendored 代码：dsh-web-mobile 在 npm 上独立迭代，本包只是把它一起挂进来。
-`dsh plugin add` 会把声明了 `dsh.bundle` 的包自动加进 `profiles/*/package.json` 的 `bundles`，
-而 profile 的模块回退会为整个依赖闭包建链接 —— 所以**装一个包，两行插件都到位**。
+当时的做法是在本插件的 `cordis.patch.yml` 里**多插一行**把 `dsh-web-mobile` 一起挂上。
+问题是市场的「一键安装」会热挂载插件，读的正是这张补丁：
 
-> 它在宽屏 / 非触摸设备上不会激活（自己的媒体查询带 `pointer: coarse`），
-> 所以桌面浏览器通过局域网访问不受影响。
+```js
+rows = parseSimplePatch(readFileSync(join(dir, 'cordis.patch.yml'), 'utf8'))
+```
+
+于是它不只挂了 `dsh-lan`，还把 `dsh-web-mobile` **又挂了一次**。如果用户自己也装过
+（它本来就在 `bundles` 里），就是双重挂载：
+
+```
+failed to apply loader entry (dsh-web-mobile):
+locale namespace "mobileNav" already has locale "zh"
+```
+
+这不是插件失效，是**整个 `dsh web` 起不来** —— 连市场的卸载页面都打不开，只能手改文件
+才能恢复。而且 `dsh-web-mobile` 的宿主半并不空：它会 patch
+`http.ServerResponse.prototype` 做响应压缩、还会注册路由，挂两次是真的有害。
+
+**一个 patch 文件不该替另一个插件决定它挂几次。** 所以回到一人一半：本插件只做局域网
+转发，移动端适配由你自己决定装不装 —— `dsh-web-mobile` 声明的是一条**可选**的
+peer dependency，不装也能用，只是手机上看到的是 DSH 桌面 UI。
+
 
 重启后终端会打印局域网地址：
 
