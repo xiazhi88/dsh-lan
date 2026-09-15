@@ -1,5 +1,7 @@
 package com.dshgo.app
 
+import com.dshgo.app.data.UpdateInstaller
+import com.dshgo.app.data.ApkDownloader
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
 import android.speech.RecognitionListener
@@ -285,6 +287,11 @@ class MainActivity : ComponentActivity() {
                     updateApkUrl = ui.updateApkUrl,
                     onCheckUpdate = { checkUpdate(force = true) },
                     onPinWidget = ::pinWidget,
+                    updatePhase = ui.updatePhase,
+                    updateBytes = ui.updateBytes,
+                    updateTotal = ui.updateTotal,
+                    updateError = ui.updateError,
+                    onInstall = { startUpdateDownload(ui.updateApkUrl) },
                     onDownload = { url -> openDownload(url) },
                     onOpenPanel = {
                         SessionWatcher.markAllSeen()
@@ -896,6 +903,59 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
+     * 应用内下载并安装新版本。
+     *
+     * 为什么不再跳浏览器：跳过去之后用户要在浏览器的下载列表里找那个 apk、
+     * 点开、确认 —— 中间隔着一个我们看不见的界面，出问题也没法提示。
+     * 放在应用内能显示进度、失败能说清原因、下完直接进安装器。
+     *
+     * 装完**不可能**由我们自动打开新版本：系统会杀掉旧进程。真正的"重启"
+     * 是安装器上的「打开」按钮；另外 [UpdateInstalledReceiver] 会在新版本
+     * 启动时补一条通知。
+     */
+    private fun startUpdateDownload(url: String) {
+        if (ui.updatePhase == "downloading") return
+        val target = url.ifEmpty { UpdateCheck.APK_URL }
+        ui = ui.copy(updatePhase = "downloading", updateBytes = 0, updateTotal = 0, updateError = null)
+
+        lifecycleScope.launch {
+            runCatching {
+                ApkDownloader.download(this@MainActivity, target) { p ->
+                    handler.post {
+                        ui = ui.copy(updateBytes = p.bytes, updateTotal = p.total)
+                    }
+                }
+            }.onSuccess { apk ->
+                ui = ui.copy(updatePhase = "ready")
+                launchInstaller(apk)
+            }.onFailure { e ->
+                ui = ui.copy(
+                    updatePhase = "failed",
+                    updateError = e.message ?: "下载失败",
+                )
+            }
+        }
+    }
+
+    /**
+     * 唤起系统安装器。
+     *
+     * 没被允许"安装未知应用"时先跳去授权页 —— 不然用户点了安装什么都不会发生，
+     * 而系统连个提示都不给，那是这个流程里最容易卡住的一步。
+     */
+    private fun launchInstaller(apk: java.io.File) {
+        if (!UpdateInstaller.canInstall(this)) {
+            toast("先允许「安装未知应用」，回来再点一次安装")
+            runCatching { startActivity(UpdateInstaller.unknownSourcesSettings(this)) }
+                .onFailure { runCatching { startActivity(UpdateInstaller.appDetailsSettings(this)) } }
+            return
+        }
+        if (!UpdateInstaller.install(this, apk)) {
+            ui = ui.copy(updatePhase = "failed", updateError = "打不开系统安装器")
+        }
+    }
+
+    /**
      * 打开 APK 下载页（交给浏览器，App 自己不下载、不装）。
      *
      * 默认用镜像 —— GitHub 国内经常打不开。用户真要官方包时，设置里另有入口。
@@ -1195,6 +1255,12 @@ data class ShellState(
     val updateChecking: Boolean = false,
     /** 本次结果建议的下载地址（镜像优先，官方兜底）。 */
     val updateApkUrl: String = UpdateCheck.APK_URL,
+
+    /** 应用内下载的状态：idle / downloading / ready / failed。 */
+    val updatePhase: String = "idle",
+    val updateBytes: Long = 0L,
+    val updateTotal: Long = 0L,
+    val updateError: String? = null,
 )
 
 // ---------------------------------------------------------------------------
@@ -1227,6 +1293,12 @@ private fun Shell(
     updateApkUrl: String,
     onCheckUpdate: () -> Unit,
     onPinWidget: () -> Unit,
+    /** 应用内下载/安装的状态。 */
+    updatePhase: String,
+    updateBytes: Long,
+    updateTotal: Long,
+    updateError: String?,
+    onInstall: () -> Unit,
     onDownload: (String) -> Unit,
     onOpenPanel: () -> Unit,
     onClosePanel: () -> Unit,
@@ -1357,6 +1429,11 @@ private fun Shell(
                 updateApkUrl = updateApkUrl,
                 onCheckUpdate = onCheckUpdate,
                 onPinWidget = onPinWidget,
+                updatePhase = updatePhase,
+                updateBytes = updateBytes,
+                updateTotal = updateTotal,
+                updateError = updateError,
+                onInstall = onInstall,
                 onDownload = onDownload,
                 currentVersion = BuildConfig.VERSION_NAME,
                 onDismiss = onCloseSettings,

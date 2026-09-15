@@ -1,6 +1,6 @@
 {
-  "version": "4.0.7",
-  "apk": "https://cdn.jsdelivr.net/gh/xiazhi88/dshgo@dist-v4.0.7/dshgo-app.apk",
+  "version": "4.0.8",
+  "apk": "https://cdn.jsdelivr.net/gh/xiazhi88/dshgo@dist-v4.0.8/dshgo-app.apk",
   "apkFallback": "https://github.com/xiazhi88/dshgo/releases/latest/download/dshgo-app.apk",
-  "notes": "\u4fee\u5361\u7247\u663e\u793a\u7a7a\u95f2\uff1b\u8bed\u97f3\u6539\u7528 SpeechRecognizer"
+  "notes": "应用内下载更新：进度条 + 直接唤起安装器，不再跳浏览器"
 }

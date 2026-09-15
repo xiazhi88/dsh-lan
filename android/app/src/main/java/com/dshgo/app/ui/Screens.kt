@@ -1,5 +1,6 @@
 package com.dshgo.app.ui
 
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.background
@@ -358,6 +359,13 @@ fun SettingsSheet(
     onDownload: (String) -> Unit,
     /** 把主屏小组件钉到桌面。 */
     onPinWidget: () -> Unit,
+    /** 应用内下载/安装：idle / downloading / ready / failed。 */
+    updatePhase: String,
+    updateBytes: Long,
+    updateTotal: Long,
+    updateError: String?,
+    /** 开始应用内下载并安装。 */
+    onInstall: () -> Unit,
     scale: Float,
     onScale: (Float) -> Unit,
     onLayout: (String) -> Unit,
@@ -579,30 +587,73 @@ fun SettingsSheet(
                             modifier = Modifier.fillMaxWidth(),
                         ) {
                             Text(
-                                "有新版本 $updateLatest",
+                                if (updatePhase == "ready") "已下载，等待安装" else "有新版本 $updateLatest",
                                 style = MaterialTheme.typography.labelMedium,
                                 color = MaterialTheme.colorScheme.primary,
                                 modifier = Modifier.weight(1f),
                             )
                             OutlinedButton(
-                                onClick = { onDownload(updateApkUrl) },
+                                onClick = onInstall,
+                                enabled = updatePhase != "downloading",
                                 shape = RoundedCornerShape(12.dp),
                                 contentPadding = PaddingValues(horizontal = 12.dp),
                             ) {
-                                Text("下载", style = MaterialTheme.typography.labelMedium)
+                                Text(
+                                    when (updatePhase) {
+                                        "downloading" -> "下载中"
+                                        "ready" -> "去安装"
+                                        "failed" -> "重试"
+                                        else -> "下载并安装"
+                                    },
+                                    style = MaterialTheme.typography.labelMedium,
+                                )
                             }
                         }
-                        // 镜像和官方各给一个入口：国内镜像快，官方地址是"正本"。
-                        Text(
-                            "下载走 jsDelivr 镜像（国内可直连）。要官方包就点下面那个。",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+
+                        // 进度条。总长未知时（服务端没给 Content-Length）用不确定态 ——
+                        // 硬凑一个百分比反而是在骗人。
+                        if (updatePhase == "downloading") {
+                            Spacer(Modifier.height(8.dp))
+                            val pct = if (updateTotal > 0) {
+                                ((updateBytes * 100) / updateTotal).toInt().coerceIn(0, 100)
+                            } else {
+                                null
+                            }
+                            if (pct == null) {
+                                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                            } else {
+                                LinearProgressIndicator(
+                                    progress = { pct / 100f },
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                buildString {
+                                    append(fmtSize(updateBytes))
+                                    if (updateTotal > 0) append(" / ").append(fmtSize(updateTotal))
+                                    if (pct != null) append("　").append(pct).append("%")
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+
+                        updateError?.let { err ->
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                "下载失败：$err",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = DshColor.Danger,
+                            )
+                        }
+
+                        // 应用内下载只是方便，不是唯一的路 —— 装不上时还得能手工兜底
                         TextButton(
                             onClick = { onDownload(UpdateCheck.APK_URL) },
                             contentPadding = PaddingValues(horizontal = 6.dp),
                         ) {
-                            Text("从 GitHub 下载", style = MaterialTheme.typography.labelSmall)
+                            Text("改用浏览器下载", style = MaterialTheme.typography.labelSmall)
                         }
                     }
 
@@ -1336,6 +1387,13 @@ fun PageErrorOverlay(
 }
 
 /** 把 WebView 的错误码翻成人话。 */
+/** 字节数写成人看的量级。 */
+private fun fmtSize(bytes: Long): String = when {
+    bytes >= 1024 * 1024 -> "%.1f MB".format(bytes / 1024.0 / 1024.0)
+    bytes >= 1024 -> "%.0f KB".format(bytes / 1024.0)
+    else -> "$bytes B"
+}
+
 private fun explainLoadFailure(detail: String): String = when {
     detail.contains("CONNECTION_REFUSED", ignoreCase = true) ->
         "电脑拒绝了这个连接 —— 最常见的原因是 dsh web 没在运行，或者 dshgo 插件没装上（装完要重启 dsh web）。"

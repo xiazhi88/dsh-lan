@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  FileProvider 暴露给系统安装器的目录。
+
+  只暴露 cache/update 这一个子目录 —— 不是整个 cache，更不是整个 files。
+  安装器需要读这个 apk，给它最小的那一个目录就够了。
+
+  为什么必须走 FileProvider：Android 7 起 `file://` URI 跨进程传递会抛
+  FileUriExposedException，只能给 content:// 加临时读权限。
+-->
+<paths>
+    <cache-path name="apk" path="update/" />
+</paths>

@@ -11,6 +11,10 @@
       改成直接用识别服务 API 后就必须有了。
     -->
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <!-- 应用内更新：下载完直接把安装器拉起来，不用让用户去文件管理器找 apk。
+         注意这只是"允许发起安装"，真正的安装确认仍然必须由用户点一下 ——
+         这是 Android 的硬性要求，绕不过。 -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Android 13+ 发系统通知要运行时授权 -->
@@ -118,6 +122,28 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_info" />
+        </receiver>
+
+        <!-- 把下好的 apk 交给系统安装器。Android 7 起 file:// 不能跨进程，
+             只能用 content:// + 临时读权限。 -->
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/file_paths" />
+        </provider>
+
+        <!-- 自己被更新之后会收到这个广播。用它补一条"已更新，点此打开"的通知 ——
+             安装器那边本来就有「打开」按钮，但用户要是先按了返回，这条能把他接回来。 -->
+        <receiver
+            android:name=".notify.UpdateInstalledReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
         </receiver>
 </application>
 
