@@ -2,5 +2,5 @@
   "version": "4.0.7",
   "apk": "https://cdn.jsdelivr.net/gh/xiazhi88/dshgo@dist-v4.0.7/dshgo-app.apk",
   "apkFallback": "https://github.com/xiazhi88/dshgo/releases/latest/download/dshgo-app.apk",
-  "notes": "修卡片显示空闲（基线没刷新 summary）；语音改用 SpeechRecognizer"
+  "notes": "\u4fee\u5361\u7247\u663e\u793a\u7a7a\u95f2\uff1b\u8bed\u97f3\u6539\u7528 SpeechRecognizer"
 }
