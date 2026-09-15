@@ -1,6 +1,6 @@
 {
-  "version": "4.0.4",
-  "apk": "https://cdn.jsdelivr.net/gh/xiazhi88/dshgo@dist-v4.0.4/dshgo-app.apk",
+  "version": "4.0.5",
+  "apk": "https://cdn.jsdelivr.net/gh/xiazhi88/dshgo@dist-v4.0.5/dshgo-app.apk",
   "apkFallback": "https://github.com/xiazhi88/dshgo/releases/latest/download/dshgo-app.apk",
-  "notes": "\u5c0f\u7ec4\u4ef6\u4e0e\u5e38\u9a7b\u901a\u77e5\u53ef\u5c31\u5730\u6279\u51c6"
+  "notes": "通知渠道改为权限授予后创建（修静默默认值）；系统设置直达渠道页"
 }

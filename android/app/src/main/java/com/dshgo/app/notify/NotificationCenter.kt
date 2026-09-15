@@ -33,7 +33,23 @@ import com.dshgo.app.R
 object NotificationCenter {
 
     /** v2：见上面那段注释 —— 改渠道配置必须换 id。 */
-    const val CHANNEL_DONE = "session_done_v2"
+    /**
+     * 「会话完成 / 等待批准」用的渠道。
+     *
+     * ★ id 里的版本号是**必须**的，不是洁癖。
+     *
+     * Android 的渠道一旦创建就**不可变** —— 代码里改重要度、改铃声，对已经
+     * 创建过的渠道完全无效，用户看到的一直是第一次创建时那些设置。
+     *
+     * 而 v2 那一版有个时机 bug：渠道在 `onCreate` 里就创建了，**那时通知权限还没授予**。
+     * 在 Android 13+ 配国产 ROM（实测 ColorOS）上，通知被禁用期间建出来的渠道会被
+     * 系统按「静默」落库 —— 之后用户授予权限，渠道仍然是静默的，
+     * 表现为"不弹横幅、没声音、没震动"，只能自己去系统设置里开。
+     *
+     * 所以这一版做两件事：换新 id（v3）拿一份干净的默认值，
+     * 并且**把创建时机推迟到权限授予之后**（见 [ensureDoneChannel]）。
+     */
+    const val CHANNEL_DONE = "session_done_v3"
     const val CHANNEL_WATCH = "watch"
 
     const val EXTRA_SESSION_ID = "open_session_id"
@@ -45,18 +61,30 @@ object NotificationCenter {
     /** 与 WatchService.startForeground 用的是同一个 id，才能原地更新。 */
     const val FOREGROUND_ID = 1001
 
-    fun ensureChannels(ctx: Context) {
+    /**
+     * 创建「会话完成 / 等待批准」渠道。
+     *
+     * ★ **必须在通知权限授予之后调用。** 原因见 [CHANNEL_DONE] 的注释：
+     * 权限还没给的时候创建的渠道，会被系统（尤其是国产 ROM）按静默落库，
+     * 之后再也没法靠代码改回来。
+     *
+     * 所以它从 [ensureChannels] 里拆了出来，改在每次真正要发通知之前调用 ——
+     * 那时权限必然已经有了。
+     */
+    fun ensureDoneChannel(ctx: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
+        // 已存在就什么都不做（渠道不可变，重复创建也只是空操作）
+        if (nm.getNotificationChannel(CHANNEL_DONE) != null) return
 
         nm.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_DONE,
                 "会话完成",
-                NotificationManager.IMPORTANCE_HIGH,
+                NotificationManager.IMPORTANCE_HIGH,   // HIGH 才有横幅
             ).apply {
-                description = "某个会话回答完成或报错时提醒"
-                // 显式指定：不写的话国产 ROM 上常常不出声
+                description = "某个会话回答完成、报错，或等你批准时提醒"
+                // 显式指定铃声与震动：不写的话国产 ROM 上常常落成静默
                 setSound(
                     android.media.RingtoneManager.getDefaultUri(
                         android.media.RingtoneManager.TYPE_NOTIFICATION,
@@ -70,6 +98,12 @@ object NotificationCenter {
                 enableLights(true)
             },
         )
+    }
+
+    fun ensureChannels(ctx: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        val nm = ctx.getSystemService(NotificationManager::class.java) ?: return
+
         nm.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_WATCH,
@@ -88,7 +122,7 @@ object NotificationCenter {
      */
     fun postTest(ctx: Context): Boolean {
         if (!granted(ctx)) return false
-        ensureChannels(ctx)
+        ensureDoneChannel(ctx)   // 发之前才建 —— 此时权限已经有了
         val n = NotificationCompat.Builder(ctx, CHANNEL_DONE)
             .setSmallIcon(R.drawable.ic_notify)
             .setContentTitle("测试通知")
@@ -109,6 +143,21 @@ object NotificationCenter {
      * 渠道一旦建好，能否出声、是否弹横幅都归系统管 —— 所以需要给用户一条
      * 直接过去调整的路，而不是让他在系统设置里自己翻。
      */
+    /**
+     * 跳到**这个渠道**的系统设置页。
+     *
+     * 比 `ACTION_APP_NOTIFICATION_SETTINGS`（应用级通知设置）再精确一层 ——
+     * 用户进去直接就看见「会话完成」那一条，横幅/响铃/震动三个开关就在眼前，
+     * 不用在应用级页面里再找一次。
+     *
+     * 国产 ROM 上这条路径可能被改过，所以调用处要准备好回退到应用级设置。
+     */
+    fun channelSettingsIntent(ctx: Context): Intent =
+        Intent(android.provider.Settings.ACTION_CHANNEL_NOTIFICATION_SETTINGS)
+            .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, ctx.packageName)
+            .putExtra(android.provider.Settings.EXTRA_CHANNEL_ID, CHANNEL_DONE)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+
     fun settingsIntent(ctx: Context): Intent =
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
@@ -119,11 +168,34 @@ object NotificationCenter {
         }.apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
 
     /** 通知渠道能否出声 —— 系统设置里被关掉时用来提示用户。 */
-    fun channelAudible(ctx: Context): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return true
-        val nm = ctx.getSystemService(NotificationManager::class.java) ?: return true
-        val ch = nm.getNotificationChannel(CHANNEL_DONE) ?: return true
-        return ch.importance >= NotificationManager.IMPORTANCE_DEFAULT
+    fun channelAudible(ctx: Context): Boolean = channelProblem(ctx) == null
+
+    /**
+     * 渠道现在有没有毛病；返回 null 表示正常，否则是**给用户看的具体原因**。
+     *
+     * 只说「静音」没用 —— 用户进系统设置后不知道该开哪个开关。这里把
+     * 横幅 / 铃声 / 震动 三项分开查，缺哪项就说哪项。
+     *
+     * 背景：这个 App 的通知在部分 ROM 上默认落成静默（渠道在权限授予前被创建，
+     * 见 [CHANNEL_DONE] 的注释）。系统一旦落库，代码就改不动了 ——
+     * 能做的是**准确告诉用户去开哪一项**。
+     */
+    fun channelProblem(ctx: Context): String? {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return null
+        val nm = ctx.getSystemService(NotificationManager::class.java) ?: return null
+        // 渠道还不存在 = 还没发过通知 = 谈不上静音，别误报
+        val ch = nm.getNotificationChannel(CHANNEL_DONE) ?: return null
+
+        val issues = buildList {
+            // HIGH 才是横幅；DEFAULT 只进通知栏，不弹出来
+            if (ch.importance < NotificationManager.IMPORTANCE_HIGH) add("不弹横幅")
+            if (ch.sound == null) add("没铃声")
+            if (!ch.shouldVibrate()) add("不震动")
+        }
+        if (issues.isEmpty()) return null
+
+        return "系统把「会话完成」通知设成了静默（${issues.joinToString("、")}）。" +
+            "点下面的「系统设置」进去打开即可 —— 这个开关归系统管，App 改不了。"
     }
 
     /** 是否有权发通知（Android 13+ 需要运行时授权）。 */
@@ -139,7 +211,7 @@ object NotificationCenter {
 
     fun post(ctx: Context, notice: SessionWatcher.Notice) {
         if (!granted(ctx)) return
-        ensureChannels(ctx)
+        ensureDoneChannel(ctx)
 
         val title = when (notice.kind) {
             SessionWatcher.Kind.Done -> "「${notice.title}」回答完成"
@@ -285,7 +357,7 @@ object NotificationCenter {
     }
 
     fun postApproval(ctx: Context, ask: DshApi.ApprovalAsk) {
-        ensureChannels(ctx)
+        ensureDoneChannel(ctx)
         val id = approvalId(ask.eventId)
 
         val open = Intent(ctx, MainActivity::class.java)

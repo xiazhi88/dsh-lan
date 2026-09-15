@@ -154,7 +154,15 @@ class MainActivity : ComponentActivity() {
     /** Android 13+ 发通知要运行时授权；用户拒绝就保持关闭，不反复骚扰。 */
     private val notifyPermission = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
-    ) { granted -> setNotify(granted) }
+    ) { granted ->
+        if (granted) {
+            // ★ 关键时机：权限刚拿到就建渠道。
+            // 在还没权限时创建的渠道会被系统按静默落库（国产 ROM 尤其明显），
+            // 而渠道一旦创建就不可变 —— 之后再改代码也没用。
+            NotificationCenter.ensureDoneChannel(this)
+        }
+        setNotify(granted)
+    }
 
     /**
      * 扫码填地址。
@@ -705,10 +713,8 @@ class MainActivity : ComponentActivity() {
         if (!NotificationCenter.granted(this)) {
             return "系统还没给通知权限 —— 点「系统设置」打开；开了之后回到这里点「发条测试通知」验证。"
         }
-        if (!NotificationCenter.channelAudible(this)) {
-            return "「会话完成」这个通知渠道被系统调成静音了 —— 点「系统设置」把它调回「默认」或「紧急」。"
-        }
-        return null
+        // 具体缺哪一项（横幅/铃声/震动）由它说 —— 只说"静音"用户不知道开哪个开关
+        return NotificationCenter.channelProblem(this)
     }
 
     /** 发一条测试通知，让用户当场确认能响。 */
@@ -833,9 +839,18 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** 跳到系统通知设置。 */
+    /**
+     * 打开系统通知设置。
+     *
+     * 优先**直达渠道页**（`EXTRA_CHANNEL_ID`）—— 用户进去就看到「会话完成」
+     * 那一条，横幅/响铃/震动三个开关就在眼前。国产 ROM 上这条路径未必实现，
+     * 所以失败时回退到应用级通知设置。
+     */
     private fun onNotifySettings() {
-        runCatching { startActivity(NotificationCenter.settingsIntent(this)) }
+        runCatching { startActivity(NotificationCenter.channelSettingsIntent(this)) }
+            .onFailure {
+                runCatching { startActivity(NotificationCenter.settingsIntent(this)) }
+            }
     }
 
     /** 开启通知：Android 13+ 先要运行时授权，其它版本直接开。 */
