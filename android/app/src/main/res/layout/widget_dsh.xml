@@ -1,67 +1,118 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  主屏小组件：一眼看状态，两个动作。
+  主屏小组件。
 
-  大部分时候用户只想扫一眼"跑完没有"，不想开 App —— 这就是小组件存在的理由。
-  两个按钮复用长按图标的快捷方式 action，逻辑只有一份。
+  ## 视觉
+  蓝 + 白 + 鲸鱼。鲸鱼取的是 DSH 前端自带的 favicon 路径（没有自己重画），
+  填品牌蓝 #4D6BFE；卡片白底、主按钮品牌蓝。状态点用语义色
+  （绿=在跑 / 琥珀=等你批准 / 灰=空闲），放在右上角不抢鲸鱼的位置。
+
+  ## RemoteViews 的三条硬限制（都踩过）
+  1. **只支持一小组视图**：`android.view.View` / `Space` **不在列表里** ——
+     用 View 做状态点会让整个小组件显示 "Can't load widget"（实测截图才发现）。
+     所以状态点用 ImageView，弹性占位用空 TextView。
+  2. **不能 tint**：要按状态换颜色只能备好几份 drawable 再换资源 id。
+  3. **尺寸由启动器决定**：同一份布局要能适应 2~4 格高。所以是
+     「上弹性空隙 + 内容块 + 下弹性空隙」，内容永远居中。
+
+  颜色在 values/ 与 values-night/ 各一份同名资源，布局只有这一份。
 -->
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:orientation="vertical"
-    android:padding="12dp"
-    android:background="@drawable/widget_bg">
+    android:padding="15dp"
+    android:background="@drawable/widget_card">
 
+    <!-- 上弹性空隙（空 TextView 当占位符 —— Space 不在允许列表里） -->
     <TextView
-        android:id="@+id/widget_title"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <!-- 鲸鱼 + 标题 + 状态点 -->
+    <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:text="@string/widget_idle"
-        android:textColor="#FFFFFF"
-        android:textSize="14sp"
-        android:textStyle="bold"
-        android:maxLines="1"
-        android:ellipsize="end" />
+        android:orientation="horizontal"
+        android:gravity="center_vertical">
+
+        <ImageView
+            android:id="@+id/widget_whale"
+            android:layout_width="17dp"
+            android:layout_height="17dp"
+            android:src="@drawable/ic_whale"
+            android:contentDescription="@null" />
+
+        <TextView
+            android:id="@+id/widget_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:layout_marginStart="8dp"
+            android:text="@string/widget_idle"
+            android:textColor="@color/wg_title"
+            android:textSize="15sp"
+            android:textStyle="bold"
+            android:letterSpacing="-0.01"
+            android:maxLines="1"
+            android:ellipsize="end" />
+
+        <ImageView
+            android:id="@+id/widget_dot"
+            android:layout_width="9dp"
+            android:layout_height="9dp"
+            android:layout_marginStart="8dp"
+            android:src="@drawable/widget_dot_idle"
+            android:contentDescription="@null" />
+    </LinearLayout>
 
     <TextView
         android:id="@+id/widget_detail"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:layout_marginStart="25dp"
         android:text="@string/widget_hint"
-        android:textColor="#B0FFFFFF"
-        android:textSize="11sp"
-        android:maxLines="2"
-        android:ellipsize="end"
-        android:layout_marginTop="2dp" />
+        android:textColor="@color/wg_detail"
+        android:textSize="11.5sp"
+        android:lineSpacingExtra="2dp"
+        android:maxLines="3"
+        android:ellipsize="end" />
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="horizontal"
-        android:layout_marginTop="6dp">
+        android:layout_marginTop="12dp">
 
         <TextView
             android:id="@+id/widget_new"
             android:layout_width="0dp"
-            android:layout_height="32dp"
+            android:layout_height="36dp"
             android:layout_weight="1"
             android:gravity="center"
             android:text="@string/shortcut_new"
-            android:textColor="#FFFFFF"
-            android:textSize="12sp"
-            android:background="@drawable/widget_btn" />
+            android:textColor="@color/wg_on_primary"
+            android:textSize="13sp"
+            android:textStyle="bold"
+            android:background="@drawable/widget_btn_primary" />
 
         <TextView
             android:id="@+id/widget_recent"
             android:layout_width="0dp"
-            android:layout_height="32dp"
+            android:layout_height="36dp"
             android:layout_weight="1"
+            android:layout_marginStart="8dp"
             android:gravity="center"
             android:text="@string/shortcut_recent"
-            android:textColor="#FFFFFF"
-            android:textSize="12sp"
-            android:layout_marginStart="6dp"
-            android:background="@drawable/widget_btn" />
+            android:textColor="@color/wg_ghost_text"
+            android:textSize="13sp"
+            android:background="@drawable/widget_btn_ghost" />
     </LinearLayout>
+
+    <TextView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
 </LinearLayout>

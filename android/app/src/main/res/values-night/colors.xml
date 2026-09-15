@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 深色：同一套语义名，换成 DshColor 的 Dark 分支。 -->
+<resources>
+    <color name="wg_card">#FF141922</color>
+    <color name="wg_card_border">#FF262D3A</color>
+
+    <color name="wg_title">#FFE9EDF6</color>
+    <color name="wg_detail">#FF9AA4B8</color>
+
+    <color name="wg_primary">#FF4D6BFE</color>
+    <color name="wg_primary_end">#FF3F5BEE</color>
+    <color name="wg_on_primary">#FFFFFFFF</color>
+
+    <color name="wg_ghost">#FF1B212C</color>
+    <color name="wg_ghost_border">#FF262D3A</color>
+    <color name="wg_ghost_text">#FFE9EDF6</color>
+
+    <color name="wg_dot_running">#FF22C55E</color>
+    <color name="wg_dot_approval">#FFF59E0B</color>
+    <color name="wg_dot_idle">#FF6B7488</color>
+</resources>

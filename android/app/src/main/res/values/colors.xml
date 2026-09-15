@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  小组件用的颜色。
+
+  取值来自 App 自己的 DshColor（那份又是对齐 DSH 界面抄的）——
+  小组件是主屏上唯一露出的品牌面，不能是另一套野色。
+
+  每个语义名在这里给浅色值，深色值在 values-night/colors.xml。
+-->
+<resources>
+    <!-- 卡片 -->
+    <color name="wg_card">#FFFFFFFF</color>
+    <color name="wg_card_border">#FFE6E9EF</color>
+
+    <!-- 文字 -->
+    <color name="wg_title">#FF10141C</color>
+    <color name="wg_detail">#FF5B6472</color>
+
+    <!-- 主按钮：DeepSeek 品牌蓝 -->
+    <color name="wg_primary">#FF4D6BFE</color>
+    <color name="wg_primary_end">#FF3F5BEE</color>
+    <color name="wg_on_primary">#FFFFFFFF</color>
+
+    <!-- 次按钮 -->
+    <color name="wg_ghost">#FFF7F8FA</color>
+    <color name="wg_ghost_border">#FFE6E9EF</color>
+    <color name="wg_ghost_text">#FF10141C</color>
+
+    <!-- 状态点 -->
+    <color name="wg_dot_running">#FF22C55E</color>
+    <color name="wg_dot_approval">#FFF59E0B</color>
+    <color name="wg_dot_idle">#FF98A1B0</color>
+</resources>

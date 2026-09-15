@@ -356,6 +356,8 @@ fun SettingsSheet(
     updateApkUrl: String,
     onCheckUpdate: () -> Unit,
     onDownload: (String) -> Unit,
+    /** 把主屏小组件钉到桌面。 */
+    onPinWidget: () -> Unit,
     scale: Float,
     onScale: (Float) -> Unit,
     onLayout: (String) -> Unit,
@@ -602,7 +604,16 @@ fun SettingsSheet(
                         ) {
                             Text("从 GitHub 下载", style = MaterialTheme.typography.labelSmall)
                         }
-                    } else if (!updateChecking && updateLatest != null && !updateNewer) {
+                    }
+
+                    TextButton(
+                        onClick = onPinWidget,
+                        contentPadding = PaddingValues(horizontal = 6.dp),
+                    ) {
+                        Text("把小组件放到桌面", style = MaterialTheme.typography.labelSmall)
+                    }
+
+                    if (!updateChecking && updateLatest != null && !updateNewer) {
                         Spacer(Modifier.height(6.dp))
                         Text(
                             "已是最新版本（$updateLatest）",

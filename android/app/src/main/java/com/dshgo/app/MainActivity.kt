@@ -282,6 +282,7 @@ class MainActivity : ComponentActivity() {
                     updateChecking = ui.updateChecking,
                     updateApkUrl = ui.updateApkUrl,
                     onCheckUpdate = { checkUpdate(force = true) },
+                    onPinWidget = ::pinWidget,
                     onDownload = { url -> openDownload(url) },
                     onOpenPanel = {
                         SessionWatcher.markAllSeen()
@@ -741,13 +742,21 @@ class MainActivity : ComponentActivity() {
             putExtra(RecognizerIntent.EXTRA_PROMPT, "说话，说完自动写进输入框")
             putExtra(RecognizerIntent.EXTRA_MAX_RESULTS, 1)
         }
-        // 设备上没有任何识别器时别崩，明确告诉用户
-        if (intent.resolveActivity(packageManager) == null) {
-            toast("这台设备没有语音识别服务")
-            return
-        }
+        // ★ 不用 resolveActivity 预判。
+        //
+        // 它在 Android 11+ 上不可靠：没声明 <queries> 时一律返回 null，
+        // 于是"明明有识别器"也被判成没有（用户实测踩到）。而且就算声明了，
+        // 有些识别器不暴露 launcher activity，仍然解析不到。
+        //
+        // 直接 try —— 真没有的话 launch 会抛 ActivityNotFoundException，
+        // 那才是唯一可靠的信号。
         runCatching { voiceLauncher.launch(intent) }
-            .onFailure { toast("打不开语音识别：${it.message}") }
+            .onFailure {
+                toast(
+                    "打不开语音输入。装一个语音识别服务（如 Google / 讯飞 / 搜狗输入法）再试；" +
+                        "也可以直接用键盘上的麦克风。",
+                )
+            }
     }
 
     /** 把识别到的文字写进 DSH 的输入框。 */
@@ -837,6 +846,28 @@ class MainActivity : ComponentActivity() {
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             )
         }
+    }
+
+    /**
+     * 请系统把小组件钉到桌面。
+     *
+     * 小组件在桌面上是"用户自己去找"的东西 —— 系统把入口藏在长按桌面 →
+     * 小组件 → 找到本应用 里面，很多人根本不知道。给一个直达入口是常规做法。
+     *
+     * API 26+ 才有 `requestPinAppWidget`；更早的版本只能提示用户手动加。
+     */
+    private fun pinWidget() {
+        val mgr = android.appwidget.AppWidgetManager.getInstance(this)
+        if (!mgr.isRequestPinAppWidgetSupported) {
+            toast("这台设备不支持自动添加 —— 长按桌面 → 小组件 → 找到「DSH Go」")
+            return
+        }
+        val ok = mgr.requestPinAppWidget(
+            android.content.ComponentName(this, com.dshgo.app.notify.DshWidgetProvider::class.java),
+            null,
+            null,
+        )
+        if (!ok) toast("请长按桌面 → 小组件 → 找到「DSH Go」")
     }
 
     /**
@@ -1132,6 +1163,7 @@ private fun Shell(
     updateChecking: Boolean,
     updateApkUrl: String,
     onCheckUpdate: () -> Unit,
+    onPinWidget: () -> Unit,
     onDownload: (String) -> Unit,
     onOpenPanel: () -> Unit,
     onClosePanel: () -> Unit,
@@ -1261,6 +1293,7 @@ private fun Shell(
                 updateChecking = updateChecking,
                 updateApkUrl = updateApkUrl,
                 onCheckUpdate = onCheckUpdate,
+                onPinWidget = onPinWidget,
                 onDownload = onDownload,
                 currentVersion = BuildConfig.VERSION_NAME,
                 onDismiss = onCloseSettings,

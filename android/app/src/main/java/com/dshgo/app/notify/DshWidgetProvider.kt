@@ -70,6 +70,10 @@ class DshWidgetProvider : AppWidgetProvider() {
                 setTextViewText(R.id.widget_title, summary.title())
                 setTextViewText(R.id.widget_detail, summary.detail("DSH"))
 
+                // 状态点带语义：绿=在跑，琥珀=等你批准，灰=空闲。
+                // RemoteViews 不能 tint，所以备了三个现成的小圆点资源按状态换。
+                setImageViewResource(R.id.widget_dot, dotFor(summary))
+
                 val ask = summary.firstApproval
                 if (ask != null) {
                     setTextViewText(R.id.widget_new, "允许")
@@ -95,6 +99,17 @@ class DshWidgetProvider : AppWidgetProvider() {
                     )
                 }
             }
+
+        /**
+         * 状态点用哪张图。
+         *
+         * 审批优先于运行 —— 有东西在等你点头时，那是屏幕上最该被看见的状态。
+         */
+        private fun dotFor(summary: SessionWatcher.Summary): Int = when {
+            summary.approvals > 0 -> R.drawable.widget_dot_approval
+            summary.running > 0 -> R.drawable.widget_dot_running
+            else -> R.drawable.widget_dot_idle
+        }
 
         private fun answer(ctx: Context, intent: Intent, code: Int): PendingIntent =
             PendingIntent.getBroadcast(

@@ -17,7 +17,27 @@
         android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
 
-    <application
+    
+    <!--
+      Android 11 起必须声明才能"看见"别的应用。
+      不声明的话 resolveActivity() 一律返回 null —— 表现为"明明有语音识别，
+      App 却说这台设备没有"。同理也会影响扫码、打开浏览器这些跳转的判定。
+
+      注意：只声明我们真的要跳过去的那几个 action，不做宽泛匹配。
+    -->
+    <queries>
+        <!-- 语音输入 -->
+        <intent>
+            <action android:name="android.speech.action.RECOGNIZE_SPEECH" />
+        </intent>
+        <!-- 打开下载页 / 系统设置 -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <data android:scheme="https" />
+        </intent>
+    </queries>
+
+<application
         android:name=".DshApp"
         android:allowBackup="false"
         android:hardwareAccelerated="true"
