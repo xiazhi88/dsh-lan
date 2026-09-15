@@ -272,7 +272,7 @@ test('自描述端点转发给上游，由 web server 路由来答', async (t) =
 
 test('Tailscale 地址识别（100.64.0.0/10）', () => {
   // 设置页靠这个判断「从外面访问」是否已就绪，边界必须准
-  const yes = ['100.64.0.1', '100.100.190.107', '100.127.255.254'];
+  const yes = ['100.64.0.1', '100.101.102.103', '100.127.255.254'];
   const no = ['100.63.255.255', '100.128.0.1', '192.168.1.100', '10.0.0.5', '::1', '', null];
 
   for (const ip of yes) assert.equal(isTailscaleAddress(ip), true, `${ip} 应判为 Tailscale`);
@@ -282,7 +282,7 @@ test('Tailscale 地址识别（100.64.0.0/10）', () => {
 test('端点响应体：区分「代理在跑」和「代理没跑」', async () => {
   const nets = [
     { name: 'en0', address: '192.168.0.21' },
-    { name: 'utun3', address: '100.100.190.107' },
+    { name: 'utun3', address: '100.101.102.103' },
   ];
 
   const up = await buildInfoPayload({ port: 3081, upstreamPort: 3080 }, nets);
@@ -291,9 +291,9 @@ test('端点响应体：区分「代理在跑」和「代理没跑」', async ()
   assert.equal(up.upstreamPort, 3080);
   assert.deepEqual(up.addresses, [
     'http://192.168.0.21:3081',
-    'http://100.100.190.107:3081',
+    'http://100.101.102.103:3081',
   ]);
-  assert.deepEqual(up.tailscale, ['http://100.100.190.107:3081'], 'Tailscale 单独一组');
+  assert.deepEqual(up.tailscale, ['http://100.101.102.103:3081'], 'Tailscale 单独一组');
   for (const url of up.tailscale) assert.ok(up.addresses.includes(url), '且是 addresses 的子集');
 
   // 代理没在跑时必须说清楚 —— 前端据此区分「没起来」和「读不到端点」

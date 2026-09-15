@@ -441,7 +441,7 @@ dsh plugin --profile web add dsh-lan -w
 ```bash
 node tools/probe-api.mjs       # 会话列表 / 模型目录
 node tools/probe-stream.mjs    # 消息历史 + 实时流式
-DSH_URL=http://192.168.0.91:3081 node tools/probe-api.mjs
+DSH_URL=http://192.168.1.100:3081 node tools/probe-api.mjs
 ```
 
 `docs/legacy-shell.html` 是 v1 的 HTML 外壳，已被原生 Compose 取代，仅留档。

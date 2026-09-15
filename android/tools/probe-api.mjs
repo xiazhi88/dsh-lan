@@ -2,7 +2,7 @@
  * 验证：自定义 UI 能否通过 /api/remote.mux 拿到会话列表 + 消息历史 + 实时事件。
  * 端点格式 <namespace>/<method>，帧格式 {type:'open',streamId,endpoint,payload:{args:{...}}}
  */
-const BASE = process.env.DSH_URL || 'http://100.100.190.107:3081';
+const BASE = process.env.DSH_URL || 'http://100.101.102.103:3081';
 const MUX = BASE.replace(/^http/, 'ws') + '/api/remote.mux';
 
 async function getCookie() {

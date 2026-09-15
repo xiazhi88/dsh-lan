@@ -1,7 +1,7 @@
 /**
  * 验证流式：session/follow 能不能拿到实时消息增量（自定义聊天界面的命脉）。
  */
-const BASE = process.env.DSH_URL || 'http://100.100.190.107:3081';
+const BASE = process.env.DSH_URL || 'http://100.101.102.103:3081';
 const MUX = BASE.replace(/^http/, 'ws') + '/api/remote.mux';
 
 let CK = '';
