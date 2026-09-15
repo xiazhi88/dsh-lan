@@ -95,6 +95,29 @@ locale namespace "mobileNav" already has locale "zh"
 | `lib/vendor/delete-session.js` | 删除会话的宿主路由（它的客户端会调） |
 | `lib/vendor/compress.js` | 大响应压缩（长会话在手机上是几 MB） |
 
+### ⚠️ 从 dsh-lan 升级过来：必须先卸掉旧包
+
+这个项目原来叫 `dsh-lan`（插件）/ `DSH 口袋`（App），后来整体改名为 `dshgo`。
+**改名不是覆盖 —— 旧包会留在 profile 里**，于是设置侧栏出现**两个「局域网访问」**：
+
+| | 旧 `dsh-lan` | 新 `dshgo` |
+|---|---|---|
+| 页签 id | `dsh-lan` | `dshgo` |
+| 端点 | `/__dsh_lan__/info` | `/__dshgo__/info` |
+
+两个 id 不同，slot 不会去重，所以各占一个位置。**卸载旧包即可：**
+
+```sh
+dsh plugin --profile web remove dsh-lan
+# 重启 dsh web
+```
+
+`remove` 若说找不到，就手改 profile 的 `package.json`，把 `dsh-lan` 从
+`dependencies` 和 `dsh.profile.bundles` 里都删掉。
+
+Android App 那边同理：`com.dsh.remote`（DSH 口袋）与 `com.dshgo.app`（DSH Go）
+是**两个不同的应用**，装过旧版的要先卸载。
+
 ### ⚠️ 装完必须重启 `dsh web`
 
 后端半（转发代理）只在**启动时**挂载，不会热生效。不重启的表现很有迷惑性：
