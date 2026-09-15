@@ -27,15 +27,19 @@ authority 也始终一致。
 
 ## 安装
 
-**一个包，装完就能用：**
+**两个包各自独立，按需安装：**
 
 ```sh
-# 从 GitHub 安装
+# 局域网入口（本插件，必须）
 dsh plugin --profile web add github:xiazhi88/dsh-lan -w
+
+# 手机端布局适配（可选，但手机上没有它体验会差很多）
+dsh plugin --profile web add dsh-web-mobile -w
+
 # 然后重启 dsh web
 ```
 
-> 已发布到 npm 之后可以简写成 `dsh plugin --profile web add dsh-lan -w`。
+> 已发布到 npm 之后第一条可以简写成 `dsh plugin --profile web add dsh-lan -w`。
 >
 > `dsh plugin add` 会把声明了 `dsh.bundle` 的包自动加进 profile 的 `bundles`，
 > 所以你不用手改配置文件。
