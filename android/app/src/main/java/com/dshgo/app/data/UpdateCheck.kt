@@ -11,7 +11,7 @@ import java.util.concurrent.TimeUnit
  * 检查有没有新版本。
  *
  * **多源。** GitHub 国内经常访问不了，所以清单优先走 jsDelivr 镜像
- * （`cdn.jsdelivr.net/gh/…@dist/version.json`），失败再回落 GitHub 的 release 接口。
+ * （`cdn.jsdelivr.net/gh/…@latest/version.json`），失败再回落 GitHub 的 release 接口。
  * APK 同理：镜像优先，官方兜底。两条路都不通也不算「出错」，只是「不知道」。
  *
  * 三条原则：
@@ -28,9 +28,29 @@ object UpdateCheck {
     /** 官方下载地址（release 资产名固定，这条链接长期有效）。 */
     const val APK_URL = "https://github.com/xiazhi88/dshgo/releases/latest/download/dshgo-app.apk"
 
-    /** jsDelivr 镜像上的版本清单。国内可达性远好于 GitHub。 */
-    private const val CDN_MANIFEST =
-        "https://cdn.jsdelivr.net/gh/xiazhi88/dshgo@dist/version.json"
+    /**
+     * jsDelivr 的**包元数据接口** —— 返回仓库的全部 tag。
+     *
+     * ★ 这是整个更新检查里最关键的一条。踩过的坑，按时间顺序：
+     *
+     * 1. `@dist/version.json`（分支）—— 分支缓存能卡死三个版本：
+     *    GitHub 上已经是 4.0.0，jsDelivr 还咬着 3.7.0，**连 purge 报 finished 都不动**。
+     * 2. `@latest/version.json` —— 以为 @latest 服务端解析就新鲜，实测**同样被缓存**
+     *    （purge 后仍是 4.0.0）。
+     * 3. **具体 tag 永远新鲜** ✓ —— 但知道 tag 名字需要一个新鲜的指针。
+     *
+     * 这个元数据接口就是那个指针：它是 API 不是静态文件，所以**不经过文件缓存**。
+     * 拿到 tag 列表 → 取最新的 `dist-v<版本>` → 从那个**不可变 tag** 读清单和 APK。
+     * 全程 jsDelivr，国内可达。
+     */
+    private const val JSDELIVR_META =
+        "https://data.jsdelivr.com/v1/packages/gh/xiazhi88/dshgo"
+
+    /** 镜像 tag 的命名：`dist-v<版本>`。见 tools/publish-dist.sh。 */
+    private const val TAG_PREFIX = "dist-v"
+
+    private fun cdnApk(version: String) =
+        "https://cdn.jsdelivr.net/gh/xiazhi88/dshgo@$TAG_PREFIX$version/dshgo-app.apk"
 
     private const val LATEST_API =
         "https://api.github.com/repos/xiazhi88/dshgo/releases/latest"
@@ -86,13 +106,15 @@ object UpdateCheck {
             }
         }
 
-        // 三个源都问一遍，取**最大的那个版本号**。
+        // 所有源都问一遍，取**最大的那个版本号**。
         //
-        // 不"第一个成功就返回"：jsDelivr 的分支缓存可能慢半天，先问它就会
+        // 不"第一个成功就返回"：某个源可能因为缓存落后好几个版本，先问它就会
         // 把新版本挡掉。取最大值既能让快的源立刻生效，也不怕慢的源拖后腿。
+        //
+        // jsDelivr 的 tag 列表放在第一位 —— 它最不容易失手（见 JSDELIVR_META 的说明）。
         val candidates = listOfNotNull(
+            runCatching { fetchFromJsDelivrTags() }.getOrNull(),
             runCatching { fetchFromNpmMirror() }.getOrNull(),
-            runCatching { fetchFromCdn() }.getOrNull(),
             runCatching { fetchLatestTag() }.getOrNull()?.let(::tagToVersion)?.let { it to APK_URL },
         )
         val best = candidates.maxByOrNull { it.first }
@@ -111,24 +133,28 @@ object UpdateCheck {
         )
     }
 
+
     /**
-     * 从 jsDelivr 镜像拿清单，返回 (版本号, APK 地址)。
+     * 从 jsDelivr 的 tag 列表拿最新版本。返回 (版本号, APK 地址)。
      *
-     * 清单里自带 `apk` 字段，所以版本和下载地址一起拿到 —— 少一次网络往返，
-     * 也不会出现「知道有新版本却不知道去哪下」的状态。
+     * 取列表里**版本号最大的** `dist-v*`，而不是"第一个" —— 接口返回的顺序
+     * 不该被我们依赖，版本号大小才是唯一可靠的依据。
      */
-    private fun fetchFromCdn(): Pair<String, String>? {
-        val req = Request.Builder()
-            .url(CDN_MANIFEST)
-            // 分支内容 jsDelivr 会缓存，带个时间戳绕开中间层
-            .header("Cache-Control", "no-cache")
-            .build()
+    private fun fetchFromJsDelivrTags(): Pair<String, String>? {
+        val req = Request.Builder().url(JSDELIVR_META).build()
         client.newCall(req).execute().use { resp ->
             if (!resp.isSuccessful) error("HTTP ${resp.code}")
-            val o = JSONObject(resp.body?.string().orEmpty())
-            val v = tagToVersion(o.optString("version")) ?: return null
-            val apk = o.optString("apk").ifEmpty { APK_URL }
-            return v to apk
+            val arr = JSONObject(resp.body?.string().orEmpty()).optJSONArray("versions")
+                ?: return null
+            var best: String? = null
+            for (i in 0 until arr.length()) {
+                val name = arr.optJSONObject(i)?.optString("version").orEmpty()
+                if (!name.startsWith(TAG_PREFIX)) continue
+                val v = tagToVersion(name.removePrefix(TAG_PREFIX)) ?: continue
+                if (best == null || isNewer(v, best)) best = v
+            }
+            val v = best ?: return null
+            return v to cdnApk(v)
         }
     }
 

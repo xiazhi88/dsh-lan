@@ -605,10 +605,29 @@ fun SettingsSheet(
                     } else if (!updateChecking && updateLatest != null && !updateNewer) {
                         Spacer(Modifier.height(6.dp))
                         Text(
-                            "已是最新版本",
+                            "已是最新版本（$updateLatest）",
                             style = MaterialTheme.typography.labelSmall,
                             color = DshColor.Running,
                         )
+                        // 查得到版本、但你知道有更新的情况确实会存在：镜像有索引延迟，
+                        // GitHub 国内又可能不通。所以给一条永远可用的手工路，
+                        // 而不是让用户对着"已是最新"干瞪眼。
+                        TextButton(
+                            onClick = { onDownload("") },
+                            contentPadding = PaddingValues(horizontal = 6.dp),
+                        ) {
+                            Text("手动下载最新版", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+
+                    if (updateChecking || updateLatest == null) {
+                        // 一路都没查到 —— 那就别装"已是最新"，直接给手工入口
+                        TextButton(
+                            onClick = { onDownload("") },
+                            contentPadding = PaddingValues(horizontal = 6.dp),
+                        ) {
+                            Text("直接打开下载页", style = MaterialTheme.typography.labelSmall)
+                        }
                     }
                 }
             }

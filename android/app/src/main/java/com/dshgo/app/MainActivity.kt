@@ -822,10 +822,12 @@ class MainActivity : ComponentActivity() {
      *
      * 默认用镜像 —— GitHub 国内经常打不开。用户真要官方包时，设置里另有入口。
      */
-    private fun openDownload(url: String = ui.updateApkUrl) {
+    private fun openDownload(url: String) {
+        // 空串 = 走官方地址（镜像可能因为索引延迟还没有新版本）
+        val target = url.ifEmpty { UpdateCheck.APK_URL }
         runCatching {
             startActivity(
-                Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url))
+                Intent(Intent.ACTION_VIEW, android.net.Uri.parse(target))
                     .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             )
         }
