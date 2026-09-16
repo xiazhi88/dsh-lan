@@ -1,5 +1,8 @@
 package com.dshgo.app
 
+import androidx.biometric.BiometricManager
+import com.dshgo.app.data.UnlockClient
+import com.dshgo.app.data.AppLock
 import com.dshgo.app.data.UpdateInstaller
 import com.dshgo.app.data.ApkDownloader
 import android.content.pm.PackageManager
@@ -77,6 +80,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.dshgo.app.ui.ConnectingScreen
 import com.dshgo.app.ui.CrashDialog
 import com.dshgo.app.ui.DshLoadingOverlay
+import com.dshgo.app.ui.LockScreen
 import com.dshgo.app.ui.PageErrorOverlay
 import com.dshgo.app.ui.DshStatusStrip
 import com.dshgo.app.ui.Screen
@@ -98,7 +102,15 @@ import com.dshgo.app.ui.theme.DshTheme
  *
  * WebView 常驻不销毁，所以「设置 → 改地址 → 连回来」不会丢掉页面状态。
  */
-class MainActivity : ComponentActivity() {
+/**
+ * 宿主 Activity。
+ *
+ * 继承 [androidx.fragment.app.FragmentActivity] 而不是 ComponentActivity，
+ * 只是因为 `BiometricPrompt` 的构造函数要求前者（它内部用 Fragment 承载对话框）。
+ * 其余能力不变 —— FragmentActivity 本身就是 ComponentActivity 的子类，
+ * Compose、registerForActivityResult、enableEdgeToEdge 都照常。
+ */
+class MainActivity : androidx.fragment.app.FragmentActivity() {
 
     /**
      * 快捷方式的 action 常量。
@@ -281,6 +293,8 @@ class MainActivity : ComponentActivity() {
                     onNotifySettings = ::onNotifySettings,
                     onScan = ::onScan,
                     onVoice = ::onVoice,
+                    onUnlock = ::submitPassword,
+                    onRetryUnlock = ::tryUnlock,
                     updateLatest = ui.updateLatest,
                     updateNewer = ui.updateNewer,
                     updateChecking = ui.updateChecking,
@@ -589,6 +603,13 @@ class MainActivity : ComponentActivity() {
             dshReady = false,
             dshError = null,
         )
+
+        // ★ 先过访问闸门，再加载页面。
+        //
+        // 宿主（插件）在转发端口上加了密码闸门：没解锁的话，注入启动 token 那一步
+        // 会被挡下，页面拿到的是密码页或 401。App 这一侧的正确顺序是
+        // 「握手 → 解锁 → 带 Cookie 加载」，顺序反了会先闪一下密码页。
+        gateThenLoad(entry)
 
         // 通知开着的话，握手之后把事件流（重新）接上。
         //
@@ -990,6 +1011,112 @@ class MainActivity : ComponentActivity() {
     }
 
     /**
+     * 问宿主要不要解锁；要就弹界面，不要就直接加载。
+     */
+    private fun gateThenLoad(entry: String) {
+        lifecycleScope.launch {
+            val required = UnlockClient.required(entry)
+            if (!required) {
+                loadDsh(entry)
+                return@launch
+            }
+            ui = ui.copy(screen = Screen.Locked, lockStage = "prompt", lockError = null)
+            tryUnlock()
+        }
+    }
+
+    /** 有存过的密码就先过生物识别；没有就问用户。 */
+    private fun tryUnlock() {
+        val stored = AppLock.loadPassword(this)
+        if (stored == null) {
+            ui = ui.copy(lockStage = "password", lockError = null)
+            return
+        }
+        when (AppLock.method(this)) {
+            // 设备既没有生物识别也没有设备密码 —— 本地无从校验，只能用存下的密码解锁。
+            // 安全边界仍在宿主那边（密码不对照样进不去），这里只是少一道本地门。
+            AppLock.Method.None -> submitPassword(stored)
+            else -> promptBiometric { submitPassword(stored) }
+        }
+    }
+
+    /** 拉起系统生物识别 / 设备密码。 */
+    private fun promptBiometric(onSuccess: () -> Unit) {
+        val executor = androidx.core.content.ContextCompat.getMainExecutor(this)
+        val callback = object : androidx.biometric.BiometricPrompt.AuthenticationCallback() {
+            override fun onAuthenticationSucceeded(
+                result: androidx.biometric.BiometricPrompt.AuthenticationResult,
+            ) {
+                onSuccess()
+            }
+
+            override fun onAuthenticationError(code: Int, msg: CharSequence) {
+                // 用户主动取消不算错误，别在界面上留红字
+                val cancelled = code == androidx.biometric.BiometricPrompt.ERROR_USER_CANCELED ||
+                    code == androidx.biometric.BiometricPrompt.ERROR_NEGATIVE_BUTTON ||
+                    code == androidx.biometric.BiometricPrompt.ERROR_CANCELED
+                ui = ui.copy(
+                    lockStage = "prompt",
+                    lockError = if (cancelled) null else msg.toString(),
+                )
+            }
+        }
+
+        runCatching {
+            val prompt = androidx.biometric.BiometricPrompt(this, executor, callback)
+            val builder = androidx.biometric.BiometricPrompt.PromptInfo.Builder()
+                .setTitle(AppLock.promptTitle(this))
+                .setSubtitle(AppLock.promptSubtitle())
+                .setAllowedAuthenticators(AppLock.authenticators(this))
+
+            // 只允许设备密码时**不能**设 negativeButtonText ——
+            // 两者同时存在会抛 IllegalArgumentException（BiometricPrompt 的硬性约束）。
+            if (AppLock.method(this) == AppLock.Method.Biometric) {
+                builder.setNegativeButtonText("取消")
+            }
+            prompt.authenticate(builder.build())
+        }.onFailure {
+            // 没有指纹硬件、被策略禁用等等 —— 退到手输密码，而不是卡住
+            ui = ui.copy(lockStage = "password", lockError = "这台设备用不了生物识别：${it.message}")
+        }
+    }
+
+    /** 把密码交给宿主，拿到解锁 Cookie 后转存进 WebView 的 CookieManager。 */
+    private fun submitPassword(password: String) {
+        ui = ui.copy(lockStage = "busy", lockError = null)
+        lifecycleScope.launch {
+            when (val r = UnlockClient.unlock(prefs.entryUrl(), password)) {
+                is UnlockClient.Unlock.Ok -> {
+                    val cm = CookieManager.getInstance()
+                    cm.setCookie(prefs.entryUrl(), r.cookie)
+                    cm.flush()
+                    AppLock.savePassword(this@MainActivity, password)
+                    ui = ui.copy(screen = Screen.Dsh, lockError = null)
+                    loadDsh(prefs.entryUrl())
+                }
+                UnlockClient.Unlock.NotRequired -> {
+                    ui = ui.copy(screen = Screen.Dsh, lockError = null)
+                    loadDsh(prefs.entryUrl())
+                }
+                UnlockClient.Unlock.BadPassword -> {
+                    // 本机存的那份已经不对了（宿主改过密码）—— 清掉再问
+                    AppLock.clear(this@MainActivity)
+                    ui = ui.copy(lockStage = "password", lockError = "密码不对，再试一次")
+                }
+                is UnlockClient.Unlock.Failed ->
+                    ui = ui.copy(lockStage = "password", lockError = r.message)
+            }
+        }
+    }
+
+    /** 真正把页面载进来（原来直接写在 onHandshake 里的那段）。 */
+    private fun loadDsh(entry: String) {
+        ui = ui.copy(screen = Screen.Dsh, dshReady = false, dshError = null)
+        startLoadTimeout()
+        webView.loadUrl(entry)
+    }
+
+    /**
      * 请系统把小组件钉到桌面。
      *
      * 小组件在桌面上是"用户自己去找"的东西 —— 系统把入口藏在长按桌面 →
@@ -1274,6 +1401,10 @@ data class ShellState(
     /** 本次结果建议的下载地址（镜像优先，官方兜底）。 */
     val updateApkUrl: String = UpdateCheck.APK_URL,
 
+    /** 闸门界面：prompt（去过生物识别） / password（要手输） / busy。 */
+    val lockStage: String = "prompt",
+    val lockError: String? = null,
+
     /** 应用内下载的状态：idle / downloading / ready / failed。 */
     val updatePhase: String = "idle",
     val updateBytes: Long = 0L,
@@ -1305,6 +1436,10 @@ private fun Shell(
     onNotifySettings: () -> Unit,
     onScan: () -> Unit,
     onVoice: () -> Unit,
+    /** 交访问密码（闸门解锁）。 */
+    onUnlock: (String) -> Unit,
+    /** 重新拉起生物识别。 */
+    onRetryUnlock: () -> Unit,
     updateLatest: String?,
     updateNewer: Boolean,
     updateChecking: Boolean,
@@ -1364,6 +1499,16 @@ private fun Shell(
                 onConnect = { onConnect(it) },
                 onScan = onScan,
                 onCancel = if (state.dshReady) onCancelSetup else null,
+            )
+
+            Screen.Locked -> LockScreen(
+                host = hostOf(state.entryUrl),
+                stage = state.lockStage,
+                error = state.lockError,
+                onUnlock = onUnlock,
+                onRetryBiometric = onRetryUnlock,
+                onOpenSettings = onOpenSettings,
+                modifier = Modifier.padding(top = stripTotal),
             )
 
             Screen.Dsh -> if (state.pageError != null) {

@@ -1,6 +1,6 @@
 {
   "name": "dshgo",
-  "version": "1.0.4",
+  "version": "2.0.0",
   "description": "把只监听 127.0.0.1 的 dsh web 暴露到局域网，并带上移动端适配 —— 一个包，手机连上就能用。",
   "type": "module",
   "main": "lib/index.js",
@@ -62,8 +62,8 @@
     }
   },
   "dshgo": {
-    "appVersion": "4.1.0",
-    "appApk": "https://cdn.jsdelivr.net/gh/xiazhi88/dshgo@dist-v4.1.0/dshgo-app.apk",
+    "appVersion": "4.2.0",
+    "appApk": "https://cdn.jsdelivr.net/gh/xiazhi88/dshgo@dist-v4.2.0/dshgo-app.apk",
     "appApkFallback": "https://github.com/xiazhi88/dshgo/releases/latest/download/dshgo-app.apk"
   }
 }

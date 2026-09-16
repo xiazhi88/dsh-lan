@@ -1,5 +1,7 @@
 package com.dshgo.app.ui
 
+import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.foundation.layout.PaddingValues
@@ -82,7 +84,8 @@ import kotlin.math.roundToInt
 
 
 /** 三个面：连接配置 / 握手等待 / DSH 界面本身（没有首页）。 */
-enum class Screen { Connecting, Setup, Dsh }
+/** Locked = 宿主开了访问闸门，App 还没解锁。 */
+enum class Screen { Connecting, Setup, Dsh, Locked }
 
 /** 顶部原生状态条的内容高度（不含状态栏）。 */
 val StripHeight = 44.dp
@@ -1410,4 +1413,130 @@ private fun explainLoadFailure(detail: String): String = when {
     detail.startsWith("HTTP 5") ->
         "服务器返回了 $detail —— 转发层或 dsh web 那边出了状况。"
     else -> "页面没能加载。"
+}
+
+/**
+ * 访问闸门界面。
+ *
+ * 宿主（插件）在转发端口上加了一道密码闸门：浏览器看到密码页，App 看到 401。
+ * 这是 App 那一侧的界面 —— 先过生物识别（或设备密码），再去宿主那边换解锁凭据。
+ *
+ * 设计上刻意**不做成"App 自己的锁"**：真正的安全边界在宿主那边，
+ * 这一屏只是把"交密码"这一步做得舒服一点。所以即使有人绕过这一屏，
+ * 他面对的仍然是宿主的闸门 —— 这也正是为什么两类客户端要的是同一个密码。
+ */
+@Composable
+fun LockScreen(
+    host: String,
+    stage: String,
+    error: String?,
+    onUnlock: (String) -> Unit,
+    onRetryBiometric: () -> Unit,
+    onOpenSettings: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var input by remember { mutableStateOf("") }
+
+    Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Column(
+            modifier = Modifier
+                .fillMaxSize()
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = 28.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Rounded.Lock,
+                contentDescription = null,
+                modifier = Modifier.size(30.dp),
+                tint = DshColor.Accent,
+            )
+            Spacer(Modifier.height(16.dp))
+            Text(
+                "需要解锁",
+                style = MaterialTheme.typography.titleLarge,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(Modifier.height(8.dp))
+            Text(
+                "$host 暴露在网络上，已开启访问验证。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+
+            Spacer(Modifier.height(26.dp))
+
+            if (stage == "busy") {
+                CircularProgressIndicator(modifier = Modifier.size(28.dp))
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "正在验证…",
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            } else if (stage == "prompt") {
+                // 生物识别由系统弹窗承载，这里只放一个重新拉起的入口
+                Button(
+                    onClick = onRetryBiometric,
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(14.dp),
+                ) {
+                    Text("用指纹或面部解锁", style = MaterialTheme.typography.labelLarge)
+                }
+                Spacer(Modifier.height(8.dp))
+                TextButton(onClick = { input = "" }) {
+                    Text("改用访问密码", style = MaterialTheme.typography.labelMedium)
+                }
+            } else {
+                OutlinedTextField(
+                    value = input,
+                    onValueChange = { input = it },
+                    modifier = Modifier.fillMaxWidth(),
+                    label = { Text("访问密码") },
+                    singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
+                    keyboardOptions = KeyboardOptions(
+                        keyboardType = KeyboardType.Password,
+                        imeAction = ImeAction.Go,
+                    ),
+                    keyboardActions = KeyboardActions(onGo = {
+                        if (input.isNotBlank()) onUnlock(input)
+                    }),
+                    shape = RoundedCornerShape(14.dp),
+                )
+                Spacer(Modifier.height(14.dp))
+                Button(
+                    onClick = { if (input.isNotBlank()) onUnlock(input) },
+                    modifier = Modifier.fillMaxWidth().height(48.dp),
+                    shape = RoundedCornerShape(14.dp),
+                ) {
+                    Text("解锁", style = MaterialTheme.typography.labelLarge)
+                }
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "这个密码是在电脑上的 DSH「设置 → 局域网访问」里设的。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                )
+            }
+
+            error?.let {
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    it,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = DshColor.Danger,
+                    textAlign = TextAlign.Center,
+                )
+            }
+
+            Spacer(Modifier.height(20.dp))
+            TextButton(onClick = onOpenSettings) {
+                Text("设置", style = MaterialTheme.typography.labelMedium)
+            }
+        }
+    }
 }

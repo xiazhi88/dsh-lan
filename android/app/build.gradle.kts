@@ -12,8 +12,8 @@ android {
         applicationId = "com.dshgo.app"
         minSdk = 26
         targetSdk = 35
-        versionCode = 30
-        versionName = "4.1.0"
+        versionCode = 31
+        versionName = "4.2.0"
     }
 
     buildFeatures {
@@ -74,6 +74,22 @@ dependencies {
     // 扫码。选 ZXing 的嵌入式封装而不是 ML Kit：后者依赖 Google Play 服务，
     // 侧载安装 + 国内设备上常常不可用。
     implementation("com.journeyapps:zxing-android-embedded:4.3.0")
+
+    // 生物识别。用 androidx.biometric 而不是直接调 FingerprintManager：
+    // 后者在 API 28 就废弃了，且不认面部识别。BiometricPrompt 会把设备支持的
+    // 方式统一起来（指纹 / 面部 / 设备密码），正是我们要的"判断手机支持什么"。
+    implementation("androidx.biometric:biometric:1.1.0")
+
+    // MainActivity 为了 BiometricPrompt 继承了 FragmentActivity，而
+    // registerForActivityResult 在 Fragment < 1.3.0 上会直接崩（lint 会拦下来）。
+    // biometric 1.1.0 拉的 fragment 太旧，所以显式升到一个稳定版本。
+    implementation("androidx.fragment:fragment-ktx:1.8.5")
+
+    // 生物识别本身**不加密任何东西** —— 它只负责"是不是本人"。
+    // 密码还是得存下来（解锁时要发给宿主），所以必须自己加密：
+    // 用 Android Keystore 里的密钥做 AES/GCM。不引 androidx.security:security-crypto
+    // 是因为它长期停在 alpha，且在部分国产 ROM 上有 keystore 异常。
+    // 直接调 Keystore 也就几十行，行为完全可控。
 
     // JVM 单元测试：PageInject 拼出来的 JS 要能被外部校验
     testImplementation("junit:junit:4.13.2")
