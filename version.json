@@ -2,5 +2,5 @@
   "version": "4.2.2",
   "apk": "https://cdn.jsdelivr.net/gh/xiazhi88/dshgo@dist-v4.2.2/dshgo-app.apk",
   "apkFallback": "https://github.com/xiazhi88/dshgo/releases/latest/download/dshgo-app.apk",
-  "notes": "设置里可选解锁方式；生物识别接受人脸（弱）；解锁界面说明首次需输一次密码"
+  "notes": "\u8bbe\u7f6e\u91cc\u53ef\u9009\u89e3\u9501\u65b9\u5f0f"
 }
