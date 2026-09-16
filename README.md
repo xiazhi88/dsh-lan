@@ -89,7 +89,8 @@ dsh plugin --profile web add github:xiazhi88/dshgo -w
 # 然后重启 dsh web
 ```
 
-已发布到 npm 之后可以简写成 `dsh plugin --profile web add dshgo -w`。
+也可以走 npm（更快，且免掉一次构建授权）：
+`dsh plugin --profile web add @xiazhi88/dshgo -w`。
 
 装完就有：**局域网入口**（设置 → 局域网访问，带二维码）、**移动端布局**、
 大响应压缩、删除会话。移动端布局的代码已内联在本包里，**不需要另装

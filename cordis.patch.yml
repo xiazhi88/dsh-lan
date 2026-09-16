@@ -19,8 +19,12 @@
 # 而且 dsh-web-mobile 的宿主半并不空：它会 patch http.ServerResponse.prototype
 # 做响应压缩、还会注册路由。挂两次是真的有害。
 #
-# 所以分工回到清晰的一人一半：dshgo 只做局域网转发，移动端适配由用户自己决定装不装。
-# 一个 patch 文件不该替另一个插件决定它挂几次。
+# 所以分工回到清晰的一人一半：dshgo 只做局域网转发 + 访问闸门，移动端适配由**内联**解决
+# （见 client/vendor/，MIT，保留署名）—— 由客户端半在运行时挂一次，不再经过这个
+# patch 文件，也就不会再出现「同一个插件被挂两次」。一行仍然只挂一行。
 - insert:
     - id: dshgo
-      name: dshgo
+      # 必须是 npm 上的**包名**，Cordis 靠它解析。
+      # 带 scope 是因为 npm 的防抢注保护不允许 `dshgo`（与已有的 `dsh-go` 太像）。
+      # @ 在 YAML 里是保留字符，所以加引号。
+      name: '@xiazhi88/dshgo'

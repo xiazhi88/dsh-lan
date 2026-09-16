@@ -65,7 +65,10 @@ object UpdateCheck {
      *
      * App 版本信息放在 package.json 的 `dshgo.appVersion`，registry 会原样返回。
      */
-    private const val NPMMIRROR_API = "https://registry.npmmirror.com/dshgo/latest"
+    // 包名带 scope：npm 的防抢注保护不允许 `dshgo`（与已有的 `dsh-go` 太像）。
+    // scoped 包在 registry 的 HTTP 路径里 @ 和 / 都要转义。
+    private const val NPMMIRROR_API =
+        "https://registry.npmmirror.com/@xiazhi88%2Fdshgo/latest"
 
     /** 自动检查的间隔：一天。 */
     private const val AUTO_INTERVAL_MS = 24 * 60 * 60 * 1000L
