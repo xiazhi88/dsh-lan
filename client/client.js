@@ -6319,6 +6319,117 @@ window.__ModuleLoader__.load({
       );
     }
 
+    /**
+     * 访问密码设置。
+     *
+     * ## 为什么这个卡片必须存在
+     *
+     * 插件侧早就有了 `POST /__dshgo__/auth`，但**没有任何界面调它** ——
+     * 而 App 的解锁界面上却写着「在电脑上的 DSH『设置 → 局域网访问』里设的」。
+     * 那句话指向一个不存在的入口，用户只能靠 curl 手敲。这个卡片补上那一步。
+     *
+     * ## 为什么只能在本机设
+     *
+     * 服务端只接受来自 127.0.0.1 的请求（且拒绝带代理标记的）。否则同网络里
+     * 任何人可以抢先设一个密码，把机主锁在门外。这个页面平时就是在
+     * `127.0.0.1:3080` 打开的，所以能设；换成局域网地址打开就会收到 403 ——
+     * 那时把服务端给的说明原样显示出来就够了。
+     */
+    function AccessPassword() {
+      const [state, setState] = useState({ loading: true, hasPassword: false, error: null });
+      const [draft, setDraft] = useState('');
+      const [busy, setBusy] = useState(false);
+      const [note, setNote] = useState(null);
+
+      const load = () => {
+        fetch('/__dshgo__/auth', { headers: { accept: 'application/json' } })
+          .then(async (res) => {
+            const body = await res.json().catch(() => ({}));
+            if (res.ok) setState({ loading: false, hasPassword: !!body.hasPassword, error: null });
+            else setState({ loading: false, hasPassword: false, error: (body.error && body.error.message) || ('HTTP ' + res.status) });
+          })
+          .catch((err) => setState({ loading: false, hasPassword: false, error: String((err && err.message) || err) }));
+      };
+      useEffect(load, []);
+
+      const submit = (password) => {
+        setBusy(true);
+        setNote(null);
+        fetch('/__dshgo__/auth', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ password }),
+        })
+          .then(async (res) => {
+            const body = await res.json().catch(() => ({}));
+            if (res.ok) {
+              setDraft('');
+              setState((prev) => ({ ...prev, hasPassword: !!body.hasPassword, error: null }));
+              setNote(password ? L('已启用。已解锁的设备需要重新验证。', 'Enabled. Already-unlocked devices must verify again.')
+                               : L('已关闭，转发端口恢复为开放。', 'Disabled — the forwarded port is open again.'));
+            } else {
+              setNote({ bad: true, text: (body.error && (body.error.message || body.error.code)) || ('HTTP ' + res.status) });
+            }
+          })
+          .catch((err) => setNote({ bad: true, text: String((err && err.message) || err) }))
+          .finally(() => setBusy(false));
+      };
+
+      const enabled = state.hasPassword;
+
+      return h('div', { style: styles.card },
+        h('div', { style: styles.head },
+          h('div', { style: styles.title }, L('访问密码', 'Access password')),
+          h('span', { style: { fontSize: 12, color: enabled ? C.ok : C.tertiary } },
+            state.loading ? L('读取中…', 'Loading…') : (enabled ? L('已启用', 'Enabled') : L('未设置', 'Not set'))),
+        ),
+        h('div', { style: styles.muted },
+          L('给转发端口加一道验证。浏览器打开会先要密码；手机 App 走指纹或面部，不用手输。',
+            'Adds a check to the forwarded port. Browsers ask for the password; the app uses biometrics instead.')),
+
+        state.error
+          ? h('div', { style: { ...styles.muted, color: C.err } }, state.error)
+          : null,
+
+        !state.loading && !state.error
+          ? h('div', { style: { display: 'flex', gap: 8, marginTop: 10, flexWrap: 'wrap' } },
+              h('input', {
+                type: 'password',
+                value: draft,
+                placeholder: enabled ? L('输入新密码以更换', 'New password to replace') : L('至少 6 位', 'At least 6 characters'),
+                autocomplete: 'new-password',
+                style: {
+                  flex: '1 1 180px', minWidth: 0, border: '1px solid ' + C.border,
+                  background: C.fill, color: C.primary, borderRadius: 7,
+                  padding: '6px 10px', fontSize: 13, fontFamily: 'inherit',
+                },
+                onInput: (e) => setDraft(e.target.value),
+              }),
+              h('button', {
+                style: { ...styles.btn, opacity: busy || draft.length < 6 ? 0.5 : 1, cursor: busy || draft.length < 6 ? 'default' : 'pointer' },
+                disabled: busy || draft.length < 6,
+                onClick: () => submit(draft),
+              }, busy ? L('处理中…', 'Working…') : (enabled ? L('更换密码', 'Change') : L('启用', 'Enable'))),
+              enabled
+                ? h('button', {
+                    style: { ...styles.btn, color: C.err },
+                    disabled: busy,
+                    onClick: () => submit(''),
+                  }, L('关闭', 'Turn off'))
+                : null,
+            )
+          : null,
+
+        note
+          ? h('div', { style: { ...styles.muted, color: note.bad ? C.err : C.ok } }, note.text)
+          : null,
+
+        h('div', { style: styles.muted },
+          L('只能在这台电脑上设置（本页所在的位置）。改了密码，所有设备都需要重新验证。',
+            'Can only be set on this machine. Changing it re-verifies every device.')),
+      );
+    }
+
     function LanSettings() {
       const [info, setInfo] = useState(null);
       const [error, setError] = useState(null);
@@ -6352,6 +6463,8 @@ window.__ModuleLoader__.load({
       const lan = all.filter((u) => !tsSet[u]);
 
       return h('div', { style: styles.root },
+
+        h(AccessPassword),
 
         h('div', { style: styles.card },
           h('div', { style: styles.title }, L('局域网访问', 'LAN access')),
