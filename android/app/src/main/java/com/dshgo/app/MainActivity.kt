@@ -1020,7 +1020,13 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 loadDsh(entry)
                 return@launch
             }
-            ui = ui.copy(screen = Screen.Locked, lockStage = "prompt", lockError = null)
+            ui = ui.copy(
+                screen = Screen.Locked,
+                lockStage = "prompt",
+                lockError = null,
+                lockDeviceMethod = AppLock.describe(this@MainActivity),
+                lockHasStored = AppLock.hasPassword(this@MainActivity),
+            )
             tryUnlock()
         }
     }
@@ -1071,7 +1077,11 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
 
             // 只允许设备密码时**不能**设 negativeButtonText ——
             // 两者同时存在会抛 IllegalArgumentException（BiometricPrompt 的硬性约束）。
-            if (AppLock.method(this) == AppLock.Method.Biometric) {
+            // 用 authenticators() 判断而不是 method()：只支持弱生物识别时，
+            // 传 STRONG 进去会立刻报错，用户点了什么也不发生。
+            if (AppLock.authenticators(this) !=
+                androidx.biometric.BiometricManager.Authenticators.DEVICE_CREDENTIAL
+            ) {
                 builder.setNegativeButtonText("取消")
             }
             prompt.authenticate(builder.build())
@@ -1404,6 +1414,10 @@ data class ShellState(
     /** 闸门界面：prompt（去过生物识别） / password（要手输） / busy。 */
     val lockStage: String = "prompt",
     val lockError: String? = null,
+    /** 这台设备支持什么解锁方式（AppLock.describe 的结果）。 */
+    val lockDeviceMethod: String = "",
+    /** 本机有没有存过密码 —— 决定下次能否直接用人脸/指纹。 */
+    val lockHasStored: Boolean = false,
 
     /** 应用内下载的状态：idle / downloading / ready / failed。 */
     val updatePhase: String = "idle",
@@ -1505,6 +1519,8 @@ private fun Shell(
                 host = hostOf(state.entryUrl),
                 stage = state.lockStage,
                 error = state.lockError,
+                deviceMethod = state.lockDeviceMethod,
+                hasStoredPassword = state.lockHasStored,
                 onUnlock = onUnlock,
                 onRetryBiometric = onRetryUnlock,
                 onOpenSettings = onOpenSettings,

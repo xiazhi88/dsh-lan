@@ -53,30 +53,81 @@ object AppLock {
     /**
      * 判断支持什么。
      *
-     * `BIOMETRIC_STRONG` 而不是 WEAK：WEAK 只保证"识别了个人"，不保证抗伪造 ——
-     * 一张照片可能就过了，而这里挡的是网络访问。宁可用设备密码兜底，也不降级。
+     * ★ 同时接受 STRONG 和 WEAK，**这一点是修出来的**。
+     *
+     * 原来只认 `BIOMETRIC_STRONG`，理由是"弱生物识别不抗伪造，一张照片可能就过了"。
+     * 但实测发现：**国产手机的面部识别绝大多数是 Class 2（弱）**，只有指纹和
+     * 极少数 3D 结构光人脸算 STRONG —— 结果是用户配了人脸解锁，App 却判定
+     * "没有生物识别"，永远只弹密码框。
+     *
+     * 重新想清楚威胁模型之后，接受 WEAK 是对的：
+     *
+     * - 这道门要挡的是「有人拿起你已解锁的手机」；
+     * - **真正的安全边界在宿主那边**（访问密码 + 转发端口的闸门），
+     *   生物识别只是决定"要不要把本机存的那份密码交出去"；
+     * - 不抗伪造的人脸虽然弱，但明显强于"完全不用验证"。
+     *
+     * 所以顺序是：指纹/强人脸 → 弱人脸 → 设备密码 →（都没有）手输密码。
      */
     fun method(ctx: Context): Method {
         val bm = BiometricManager.from(ctx)
-        val strong = BiometricManager.Authenticators.BIOMETRIC_STRONG
-        val cred = BiometricManager.Authenticators.DEVICE_CREDENTIAL
         return when {
-            bm.canAuthenticate(strong) == BiometricManager.BIOMETRIC_SUCCESS -> Method.Biometric
-            bm.canAuthenticate(cred) == BiometricManager.BIOMETRIC_SUCCESS -> Method.DeviceCredential
+            bm.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG) ==
+                BiometricManager.BIOMETRIC_SUCCESS -> Method.Biometric
+
+            bm.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK) ==
+                BiometricManager.BIOMETRIC_SUCCESS -> Method.Biometric
+
+            bm.canAuthenticate(BiometricManager.Authenticators.DEVICE_CREDENTIAL) ==
+                BiometricManager.BIOMETRIC_SUCCESS -> Method.DeviceCredential
+
             else -> Method.None
         }
     }
 
-    /** 给 BiometricPrompt 用的认证器组合。 */
-    fun authenticators(ctx: Context): Int = when (method(ctx)) {
-        Method.Biometric -> BiometricManager.Authenticators.BIOMETRIC_STRONG
-        Method.DeviceCredential -> BiometricManager.Authenticators.DEVICE_CREDENTIAL
-        Method.None -> BiometricManager.Authenticators.BIOMETRIC_STRONG
+    /**
+     * 给 BiometricPrompt 用的认证器组合。
+     *
+     * 这里要看**哪一档真的可用**：设备只有弱生物识别时，传 STRONG 进去会立刻
+     * 报 `BIOMETRIC_ERROR_NO_BIOMETRICS`，用户点了按钮什么也不发生。
+     */
+    fun authenticators(ctx: Context): Int {
+        val bm = BiometricManager.from(ctx)
+        if (bm.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG) ==
+            BiometricManager.BIOMETRIC_SUCCESS
+        ) {
+            return BiometricManager.Authenticators.BIOMETRIC_STRONG
+        }
+        if (bm.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK) ==
+            BiometricManager.BIOMETRIC_SUCCESS
+        ) {
+            return BiometricManager.Authenticators.BIOMETRIC_WEAK
+        }
+        return BiometricManager.Authenticators.DEVICE_CREDENTIAL
+    }
+
+    /**
+     * 这台设备上到底有什么 —— 给界面显示用，让用户知道为什么弹的是指纹还是人脸。
+     */
+    fun describe(ctx: Context): String {
+        val bm = BiometricManager.from(ctx)
+        val strong = bm.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG) ==
+            BiometricManager.BIOMETRIC_SUCCESS
+        val weak = bm.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK) ==
+            BiometricManager.BIOMETRIC_SUCCESS
+        val cred = bm.canAuthenticate(BiometricManager.Authenticators.DEVICE_CREDENTIAL) ==
+            BiometricManager.BIOMETRIC_SUCCESS
+        return when {
+            strong -> "指纹或人脸（强）"
+            weak -> "指纹或人脸"
+            cred -> "设备密码"
+            else -> "无"
+        }
     }
 
     /** 界面上该怎么称呼这次验证。 */
     fun promptTitle(ctx: Context): String = when (method(ctx)) {
-        Method.Biometric -> "验证身份"
+        Method.Biometric -> "用指纹或人脸解锁"
         Method.DeviceCredential -> "输入设备密码"
         Method.None -> "验证身份"
     }

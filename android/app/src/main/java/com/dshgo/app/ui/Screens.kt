@@ -1430,6 +1430,10 @@ fun LockScreen(
     host: String,
     stage: String,
     error: String?,
+    /** 这台设备支持什么（AppLock.describe）；没有生物识别时为空。 */
+    deviceMethod: String,
+    /** 是否已经存过密码 —— 决定了"下次能不能直接用人脸/指纹"。 */
+    hasStoredPassword: Boolean,
     onUnlock: (String) -> Unit,
     onRetryBiometric: () -> Unit,
     onOpenSettings: () -> Unit,
@@ -1490,6 +1494,27 @@ fun LockScreen(
                     Text("改用访问密码", style = MaterialTheme.typography.labelMedium)
                 }
             } else {
+                // ★ 把「为什么这次要输密码」说清楚。
+                //
+                // 密码是根凭据，生物识别只是本地的一道门 —— 所以第一次必须先输一次，
+                // 之后才能用人脸/指纹。不解释的话，用户配好了人脸解锁却发现还是密码框，
+                // 会直接认为"生物识别没生效"。
+                if (deviceMethod != "无" && !hasStoredPassword) {
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        color = DshColor.AccentSoft,
+                    ) {
+                        Text(
+                            "这台设备支持$deviceMethod。先输一次密码，之后就能直接用$deviceMethod 解锁，不用再输。",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurface,
+                            modifier = Modifier.padding(12.dp),
+                        )
+                    }
+                    Spacer(Modifier.height(12.dp))
+                }
+
                 OutlinedTextField(
                     value = input,
                     onValueChange = { input = it },

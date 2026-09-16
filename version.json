@@ -1,6 +1,6 @@
 {
-  "version": "4.2.0",
-  "apk": "https://cdn.jsdelivr.net/gh/xiazhi88/dshgo@dist-v4.2.0/dshgo-app.apk",
+  "version": "4.2.1",
+  "apk": "https://cdn.jsdelivr.net/gh/xiazhi88/dshgo@dist-v4.2.1/dshgo-app.apk",
   "apkFallback": "https://github.com/xiazhi88/dshgo/releases/latest/download/dshgo-app.apk",
-  "notes": "\u8bbf\u95ee\u95f8\u95e8\uff1a\u6d4f\u89c8\u5668\u8981\u5bc6\u7801\uff0cApp \u8d70\u6307\u7eb9/\u9762\u90e8"
+  "notes": "生物识别接受人脸（弱生物识别）；解锁界面说明首次需输一次密码"
 }
