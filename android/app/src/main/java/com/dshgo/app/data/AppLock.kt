@@ -38,6 +38,49 @@ object AppLock {
     private const val GCM_TAG_BITS = 128
     private const val IV_BYTES = 12
 
+    /**
+     * 用户选的解锁方式。
+     *
+     * 不做成"自动"一条路：设备支持什么和**用户想用什么**是两件事。
+     * 有人就是要指纹不要人脸、有人不想用生物识别、有人宁可每次手输密码。
+     */
+    enum class Mode(val id: String, val label: String) {
+        /** 指纹/人脸优先，没有就用设备密码。默认。 */
+        Auto("auto", "自动"),
+
+        /** 只认指纹/人脸；识别不成也不给设备密码回退。 */
+        Biometric("biometric", "仅指纹/人脸"),
+
+        /** 只用设备密码（不想用生物识别的人）。 */
+        Credential("credential", "仅设备密码"),
+
+        /**
+         * 不锁本机 —— **每次都要手输访问密码**。
+         *
+         * 这是最严的一档：本机不存密码，也就没有"被拿起手机就能解开"的问题。
+         * 代价是每次打开都要打一遍。
+         */
+        None("none", "每次输密码");
+
+        companion object {
+            fun from(id: String?): Mode =
+                entries.firstOrNull { it.id == id } ?: Auto
+        }
+    }
+
+    private const val KEY_MODE = "unlock_mode"
+
+    fun mode(ctx: Context): Mode = Mode.from(
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE).getString(KEY_MODE, null),
+    )
+
+    fun setMode(ctx: Context, mode: Mode) {
+        ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit().putString(KEY_MODE, mode.id).apply()
+        // 选了「每次输密码」就把本机存的清掉 —— 留着它和这个选择自相矛盾
+        if (mode == Mode.None) clear(ctx)
+    }
+
     /** 设备支持的解锁方式。 */
     enum class Method {
         /** 指纹或面部 —— 优先 */
@@ -71,17 +114,26 @@ object AppLock {
      */
     fun method(ctx: Context): Method {
         val bm = BiometricManager.from(ctx)
-        return when {
-            bm.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG) ==
-                BiometricManager.BIOMETRIC_SUCCESS -> Method.Biometric
+        fun ok(a: Int) = bm.canAuthenticate(a) == BiometricManager.BIOMETRIC_SUCCESS
+        val bioOk = ok(BiometricManager.Authenticators.BIOMETRIC_STRONG) ||
+            ok(BiometricManager.Authenticators.BIOMETRIC_WEAK)
+        val credOk = ok(BiometricManager.Authenticators.DEVICE_CREDENTIAL)
 
-            bm.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK) ==
-                BiometricManager.BIOMETRIC_SUCCESS -> Method.Biometric
+        return when (mode(ctx)) {
+            // 只认生物识别：设备没有就退到手输密码，
+            // **不给设备密码回退** —— 用户明确说了不要那一档
+            Mode.Biometric -> if (bioOk) Method.Biometric else Method.None
 
-            bm.canAuthenticate(BiometricManager.Authenticators.DEVICE_CREDENTIAL) ==
-                BiometricManager.BIOMETRIC_SUCCESS -> Method.DeviceCredential
+            Mode.Credential -> if (credOk) Method.DeviceCredential else Method.None
 
-            else -> Method.None
+            Mode.None -> Method.None
+
+            // 自动：指纹/强人脸 → 弱人脸 → 设备密码 → 手输
+            Mode.Auto -> when {
+                bioOk -> Method.Biometric
+                credOk -> Method.DeviceCredential
+                else -> Method.None
+            }
         }
     }
 
@@ -93,23 +145,29 @@ object AppLock {
      */
     fun authenticators(ctx: Context): Int {
         val bm = BiometricManager.from(ctx)
-        if (bm.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG) ==
+        val strong = bm.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG) ==
             BiometricManager.BIOMETRIC_SUCCESS
-        ) {
-            return BiometricManager.Authenticators.BIOMETRIC_STRONG
-        }
-        if (bm.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK) ==
+        val weak = bm.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_WEAK) ==
             BiometricManager.BIOMETRIC_SUCCESS
-        ) {
-            return BiometricManager.Authenticators.BIOMETRIC_WEAK
+
+        return when (mode(ctx)) {
+            Mode.Credential -> BiometricManager.Authenticators.DEVICE_CREDENTIAL
+            Mode.None -> BiometricManager.Authenticators.DEVICE_CREDENTIAL
+            // 自动 / 仅生物识别：优先强，退化到弱；都不可用就给设备密码，
+            // 让系统自己弹一个能用的界面，而不是直接失败
+            else -> when {
+                strong -> BiometricManager.Authenticators.BIOMETRIC_STRONG
+                weak -> BiometricManager.Authenticators.BIOMETRIC_WEAK
+                else -> BiometricManager.Authenticators.DEVICE_CREDENTIAL
+            }
         }
-        return BiometricManager.Authenticators.DEVICE_CREDENTIAL
     }
 
     /**
      * 这台设备上到底有什么 —— 给界面显示用，让用户知道为什么弹的是指纹还是人脸。
      */
     fun describe(ctx: Context): String {
+        if (mode(ctx) == Mode.None) return "无"
         val bm = BiometricManager.from(ctx)
         val strong = bm.canAuthenticate(BiometricManager.Authenticators.BIOMETRIC_STRONG) ==
             BiometricManager.BIOMETRIC_SUCCESS
@@ -117,11 +175,15 @@ object AppLock {
             BiometricManager.BIOMETRIC_SUCCESS
         val cred = bm.canAuthenticate(BiometricManager.Authenticators.DEVICE_CREDENTIAL) ==
             BiometricManager.BIOMETRIC_SUCCESS
-        return when {
-            strong -> "指纹或人脸（强）"
-            weak -> "指纹或人脸"
-            cred -> "设备密码"
-            else -> "无"
+        return when (mode(ctx)) {
+            Mode.Credential -> if (cred) "设备密码" else "无"
+            Mode.Biometric -> if (strong) "指纹或人脸（强）" else if (weak) "指纹或人脸" else "无"
+            else -> when {
+                strong -> "指纹或人脸（强）"
+                weak -> "指纹或人脸"
+                cred -> "设备密码"
+                else -> "无"
+            }
         }
     }
 

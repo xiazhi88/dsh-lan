@@ -295,6 +295,9 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     onVoice = ::onVoice,
                     onUnlock = ::submitPassword,
                     onRetryUnlock = ::tryUnlock,
+                    onLockMode = ::setLockMode,
+                    lockModeState = ui.lockModeState,
+                    lockDevice = ui.lockDevice,
                     updateLatest = ui.updateLatest,
                     updateNewer = ui.updateNewer,
                     updateChecking = ui.updateChecking,
@@ -337,6 +340,12 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         autoPickAddress()
         watchNetwork()
         maybeHandleShortcut(intent)
+
+        // 解锁方式与设备能力各读一次（重组时不必反复查系统）
+        ui = ui.copy(
+            lockModeState = AppLock.mode(this).id,
+            lockDevice = AppLock.describe(this),
+        )
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -1091,6 +1100,15 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         }
     }
 
+    /** 换解锁方式。选「每次输密码」时 AppLock 会顺手清掉本机存的那份。 */
+    private fun setLockMode(id: String) {
+        AppLock.setMode(this, AppLock.Mode.from(id))
+        ui = ui.copy(
+            lockModeState = AppLock.mode(this).id,
+            lockDevice = AppLock.describe(this),
+        )
+    }
+
     /** 把密码交给宿主，拿到解锁 Cookie 后转存进 WebView 的 CookieManager。 */
     private fun submitPassword(password: String) {
         ui = ui.copy(lockStage = "busy", lockError = null)
@@ -1414,6 +1432,10 @@ data class ShellState(
     /** 闸门界面：prompt（去过生物识别） / password（要手输） / busy。 */
     val lockStage: String = "prompt",
     val lockError: String? = null,
+    /** 用户选的解锁方式（AppLock.Mode.id）。 */
+    val lockModeState: String = "auto",
+    /** 这台设备实际可用什么。 */
+    val lockDevice: String = "",
     /** 这台设备支持什么解锁方式（AppLock.describe 的结果）。 */
     val lockDeviceMethod: String = "",
     /** 本机有没有存过密码 —— 决定下次能否直接用人脸/指纹。 */
@@ -1454,12 +1476,16 @@ private fun Shell(
     onUnlock: (String) -> Unit,
     /** 重新拉起生物识别。 */
     onRetryUnlock: () -> Unit,
+    /** 更换解锁方式。 */
+    onLockMode: (String) -> Unit,
     updateLatest: String?,
     updateNewer: Boolean,
     updateChecking: Boolean,
     updateApkUrl: String,
     onCheckUpdate: () -> Unit,
     onPinWidget: () -> Unit,
+    lockModeState: String,
+    lockDevice: String,
     /** 应用内下载/安装的状态。 */
     updatePhase: String,
     updateBytes: Long,
@@ -1607,6 +1633,9 @@ private fun Shell(
                 updateChecking = updateChecking,
                 updateApkUrl = updateApkUrl,
                 onCheckUpdate = onCheckUpdate,
+                lockMode = lockModeState,
+                lockDeviceMethod = lockDevice,
+                onLockMode = onLockMode,
                 onPinWidget = onPinWidget,
                 updatePhase = updatePhase,
                 updateBytes = updateBytes,

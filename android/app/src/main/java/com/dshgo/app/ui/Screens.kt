@@ -362,6 +362,11 @@ fun SettingsSheet(
     onDownload: (String) -> Unit,
     /** 把主屏小组件钉到桌面。 */
     onPinWidget: () -> Unit,
+    /** 解锁方式（AppLock.Mode 的 id）。 */
+    lockMode: String,
+    /** 这台设备实际能用什么（给说明文字用）。 */
+    lockDeviceMethod: String,
+    onLockMode: (String) -> Unit,
     /** 应用内下载/安装：idle / downloading / ready / failed。 */
     updatePhase: String,
     updateBytes: Long,
@@ -464,6 +469,73 @@ fun SettingsSheet(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+
+            Spacer(Modifier.height(20.dp))
+
+            // 解锁方式
+            //
+            // 放在这里而不是塞进通知那块：它和"怎么进这个 App"有关，
+            // 和通知无关。设备实际支持什么写在下面 —— 用户选了"仅指纹/人脸"
+            // 但这台设备只有人脸时，得让他看得见为什么弹的是人脸。
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+            ) {
+                Column(Modifier.padding(14.dp)) {
+                    Text(
+                        "解锁方式",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Spacer(Modifier.height(2.dp))
+                    Text(
+                        "打开 App 时怎么验证身份。访问密码始终是根凭据 —— 生物识别只是本机的一道门。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+
+                    Spacer(Modifier.height(10.dp))
+                    SegmentedControl(
+                        options = listOf(
+                            "auto" to "自动",
+                            "biometric" to "指纹/人脸",
+                            "credential" to "设备密码",
+                            "none" to "每次输密码",
+                        ),
+                        selected = lockMode,
+                        onSelect = onLockMode,
+                    )
+
+                    Spacer(Modifier.height(8.dp))
+                    Text(
+                        buildString {
+                            append(
+                                when (lockMode) {
+                                    "biometric" -> "只用指纹或人脸，不给设备密码回退。"
+                                    "credential" -> "只用设备的 PIN / 图案 / 密码。"
+                                    "none" -> "本机不存密码，每次打开都手输 —— 最严的一档。"
+                                    else -> "指纹或人脸优先，没有就用设备密码。"
+                                },
+                            )
+                            if (lockMode != "none") {
+                                append("　这台设备可用：")
+                                append(lockDeviceMethod.ifEmpty { "无" })
+                                if (lockDeviceMethod == "无") {
+                                    // 文案要跟着选项走 —— 选了「设备密码」却说"配好指纹或人脸"，
+                                    // 用户会以为选错了
+                                    append(
+                                        if (lockMode == "credential") "（先去系统设置里设一个 PIN 或图案）"
+                                        else "（配好指纹或人脸后再来）",
+                                    )
+                                }
+                            }
+                        },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
 
             Spacer(Modifier.height(20.dp))
 
