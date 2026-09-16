@@ -5990,7 +5990,18 @@ __modules["index.js"](__localRequire, module, module.exports);
 // 不需要额外开一条 host RPC 通道。
 
 window.__ModuleLoader__.load({
-  id: 'dshgo',
+  // ★ 这个 id **必须等于 npm 包名**，由 tools/build-client.mjs 在构建时注入。
+  //
+  // 曾经写死成 'dshgo'。包名一改（npm 的防抢注保护不允许 `dshgo`，改成了
+  // `@xiazhi88/dshgo`）就出事：加载器按包名找模块，而 bundle 里注册的是另一个 id，
+  // 于是同一份 bundle 被当作两个模块执行 —— 报的是**核心模块**重复注册：
+  //
+  //   failed to import loader entry (@xiazhi88/dshgo):
+  //     client-modules: duplicate factory registration for "@deepseek-ai/dsh-api-gateway"
+  //
+  // 整页 "Failed to load plugins"，而错误里完全看不出根因在这个 id 上。
+  // 查证方式：同一份代码只改包名 → 必坏；不改包名 → 正常。两次对照都复现。
+  id: '@xiazhi88/dshgo',
   // eslint-disable-next-line no-unused-vars
   factory: (require) => {
     var module = { exports: {} };
@@ -6430,6 +6441,78 @@ window.__ModuleLoader__.load({
       );
     }
 
+    /**
+     * 插件更新提示。
+     *
+     * **只提示，不自动装。** 在宿主进程里改自己的依赖，改错了 dsh web 起不来，
+     * 而恢复要靠手改 profile 文件 —— 这件事该由人按下回车，不该由页面代劳。
+     *
+     * 版本信息来自服务端的 /__dshgo__/info：服务端查 npm（npmmirror 优先、
+     * GitHub 兜底）并缓存 6 小时。让页面直接查 registry 会被 CORS 挡下。
+     *
+     * 查不到时服务端给空字符串，这里就整块不显示 —— 宁可不说，也不误报。
+     */
+    function PluginUpdate({ info }) {
+      const [copied, setCopied] = useState(false);
+      if (!info || !info.updateAvailable) return null;
+
+      const current = info.version || '?';
+      const latest = info.latestVersion || '?';
+      const cmd = 'dsh plugin --profile web add @xiazhi88/dshgo -w';
+
+      return h('div', { style: { ...styles.card, borderColor: C.brand } },
+        h('div', { style: styles.head },
+          h('div', { style: styles.title }, L('插件有新版本', 'Plugin update available')),
+          h('span', { style: { fontSize: 12, color: C.brand } }, current + ' → ' + latest),
+        ),
+        h('div', { style: styles.muted },
+          L('在电脑上执行下面这条，然后重启 dsh web：',
+            'Run this on the machine, then restart dsh web:')),
+        h('div', {
+          style: {
+            marginTop: 8, padding: '8px 10px', borderRadius: 7,
+            background: C.fill, border: '1px solid ' + C.border,
+            fontFamily: 'ui-monospace, SFMono-Regular, Menlo, monospace',
+            fontSize: 12, color: C.primary, wordBreak: 'break-all',
+          },
+        }, cmd),
+        h('div', { style: { display: 'flex', gap: 8, marginTop: 8, alignItems: 'center', flexWrap: 'wrap' } },
+          h('button', {
+            style: styles.btn,
+            onClick: () => { if (copyText(cmd)) { setCopied(true); setTimeout(() => setCopied(false), 1600); } },
+          }, copied ? L('已复制', 'Copied') : L('复制命令', 'Copy command')),
+          h('a', {
+            href: 'https://github.com/xiazhi88/dshgo/releases',
+            target: '_blank', rel: 'noreferrer',
+            style: { ...styles.link, marginTop: 0 },
+          }, L('看更新内容', 'Release notes')),
+        ),
+        h('div', { style: styles.muted },
+          L('不会自动安装 —— 改的是 dsh web 自己的依赖，装坏了要手改文件才能恢复，所以这一步留给人。',
+            'This is not installed automatically: it changes dsh web\'s own dependencies, and a bad install needs manual file edits to undo.')),
+      );
+    }
+
+    /**
+     * 引导 star。
+     *
+     * 放在页签最下面，一句话，不弹窗不挡路 —— 它是个请求，不是功能。
+     * 显示与否不影响任何东西，所以也不做"已看过就不再显示"那套。
+     */
+    function StarCard() {
+      return h('div', { style: styles.card },
+        h('div', { style: styles.title }, L('如果它帮你省了事', 'If this saved you some time')),
+        h('div', { style: styles.muted },
+          L('代码和 App 都在 GitHub 上，给个 star 是最直接的支持 —— 也让更多人能找到它。',
+            'The plugin and the Android app are both on GitHub. A star is the most direct way to help others find it.')),
+        h('a', {
+          href: 'https://github.com/xiazhi88/dshgo',
+          target: '_blank', rel: 'noreferrer',
+          style: styles.link,
+        }, L('去 GitHub 看看 →', 'Open on GitHub →')),
+      );
+    }
+
     function LanSettings() {
       const [info, setInfo] = useState(null);
       const [error, setError] = useState(null);
@@ -6525,9 +6608,12 @@ window.__ModuleLoader__.load({
               : (error ? L('服务端半未运行', 'Host half not running') : L('读取中…', 'Loading…')),
           ),
           h('div', { style: styles.muted },
-            L('本插件只做转发：把只监听 127.0.0.1 的 dsh web 暴露到局域网，并补上移动端适配。',
-              'This plugin only forwards: it exposes the loopback-only dsh web to your LAN, plus mobile adaptation.')),
+            L('本插件做转发与访问闸门：把只监听 127.0.0.1 的 dsh web 暴露到局域网，可选访问密码，并内联移动端适配。',
+              'This plugin forwards and gates: it exposes the loopback-only dsh web to your LAN, optionally requires an access password, and inlines the mobile adaptation.')),
         ),
+
+        // star 引导放最后：它是请求，不是功能，不该挡在状态信息前面
+        h(StarCard),
       );
     }
 

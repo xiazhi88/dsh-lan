@@ -22,6 +22,22 @@ const banner = `// ┌───────────────────�
 // └─────────────────────────────────────────────────────────────────┘
 `;
 
-writeFileSync(resolve(root, 'client/client.js'), `${banner}${vendor}\n${index}`);
+// ★ 模块 id 必须等于包名，从 package.json 取，不能写死。
+//
+// 写死过一次，包名一改就整页 "Failed to load plugins"，而报错是**核心模块**
+// 重复注册（`duplicate factory registration for "@deepseek-ai/dsh-api-gateway"`），
+// 从错误信息完全看不出根因在这里。查证：同一份代码只改包名 → 必坏。
+const pkgName = JSON.parse(read('package.json')).name;
+if (typeof pkgName !== 'string' || pkgName.length === 0) {
+  throw new Error('package.json 里没有 name，无法确定客户端模块 id');
+}
+const PLACEHOLDER = '__DSHGO_MODULE_ID__';
+if (!index.includes(PLACEHOLDER)) {
+  // 不静默 —— 这个项目已经因为"字符串替换没匹配上却没人知道"栽过几次
+  throw new Error(`client/index.js 里没有 ${PLACEHOLDER}，构建中止`);
+}
+const withId = index.split(PLACEHOLDER).join(pkgName);
+
+writeFileSync(resolve(root, 'client/client.js'), `${banner}${vendor}\n${withId}`);
 const kb = (read('client/client.js').length / 1024).toFixed(0);
-console.log(`client/client.js 已生成（${kb} KB）`);
+console.log(`client/client.js 已生成（${kb} KB），模块 id = ${pkgName}`);
