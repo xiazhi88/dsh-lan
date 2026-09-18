@@ -1,5 +1,8 @@
 package com.dshgo.app.ui
 
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.ui.graphics.Color
 import com.dshgo.app.ui.theme.softAccent
 import com.dshgo.app.data.displayName
@@ -1689,6 +1692,44 @@ fun LockScreen(
 }
 
 /**
+ * 顶部的系统 inset —— **只在窗口真的贴着屏幕顶时才留**。
+ *
+ * ## 为什么不能直接用 statusBarsPadding()
+ *
+ * 分屏（以及部分自由窗口场景）时，系统已经把窗口放在状态栏下面了，
+ * 但 Compose 仍然报一个非零的状态栏 inset —— 照补就是白留一条。
+ * 实测：分屏下面板上方多出约 29dp 的空白，正好是状态栏的高度。
+ *
+ * ## 判据是窗口在屏幕上的位置
+ *
+ * 补 inset 的目的是「别让内容钻到状态栏图标底下」。窗口顶端已经在状态栏
+ * 下沿之下时，这个目的已经由系统达成了，再补一次纯属浪费。
+ * 全屏 edge-to-edge 时窗口从 y=0 开始，这个条件不成立，照常补。
+ */
+@Composable
+private fun rememberTopInset(): androidx.compose.ui.unit.Dp {
+    val view = androidx.compose.ui.platform.LocalView.current
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    // getTop 是 @Composable 的，只能在合成函数体里读 —— 不能塞进 DisposableEffect
+    val rawTop = WindowInsets.statusBars.getTop(density)
+    var pad by remember { mutableStateOf(0.dp) }
+
+    DisposableEffect(view, rawTop) {
+        val loc = IntArray(2)
+        fun apply() {
+            view.getLocationOnScreen(loc)
+            // 窗口顶端已经在状态栏下沿之下 → 系统已经躲开了，不用再补
+            pad = if (loc[1] >= rawTop) 0.dp else with(density) { rawTop.toDp() }
+        }
+        apply()
+        val listener = android.view.View.OnLayoutChangeListener { _, _, _, _, _, _, _, _, _ -> apply() }
+        view.addOnLayoutChangeListener(listener)
+        onDispose { view.removeOnLayoutChangeListener(listener) }
+    }
+    return pad
+}
+
+/**
  * 首页：选择要连接的电脑。
  *
  * ## 为什么连接列表是首页，而不是藏在设置里
@@ -1720,8 +1761,12 @@ fun ConnectionsScreen(
     modifier: Modifier = Modifier,
 ) {
     var editing by remember { mutableStateOf<Connection?>(null) }
+    val topPad = rememberTopInset()
 
-    Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+    Surface(
+        modifier = modifier.fillMaxSize().padding(top = topPad),
+        color = MaterialTheme.colorScheme.background,
+    ) {
         Column(Modifier.fillMaxSize()) {
 
             // ── 品牌头 ────────────────────────────────────────────────

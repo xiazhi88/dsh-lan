@@ -1641,10 +1641,9 @@ private fun Shell(
                 onEdit = onSaveConn,
                 onDelete = onDeleteConn,
                 onBack = onBackToDsh,
-                // ★ 只留状态栏的高度，**不要 stripTotal**。
-                //   stripTotal 里含状态条本身的高度，而这一页根本没有状态条 ——
-                //   结果顶部白留一条。首页要顶到状态栏下面。
-                modifier = Modifier.statusBarsPadding(),
+                // 顶部的系统 inset 由页面自己算（它能判断窗口有没有贴着屏幕顶，
+                // 分屏时不该再补一份，见 rememberTopInset）
+                modifier = Modifier,
             )
 
             Screen.Locked -> LockScreen(
