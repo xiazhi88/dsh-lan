@@ -145,6 +145,9 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     /** 同时常驻几个 WebView。见 webViews 的说明。 */
     private val MAX_LIVE_WEBVIEWS = 2
 
+    /** 还没有配地址时占位用的空白页 —— 见 activate() 里为什么必须有它。 */
+    private val BLANK_PAGE = "about:blank"
+
     /**
      * 常驻的 WebView，按入口地址存。最多 [MAX_LIVE_WEBVIEWS] 个。
      *
@@ -444,7 +447,9 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         recognizer = null
         clearLoadTimeout()
         webViews.values.forEach { runCatching { it.onPause() } }
-        webView.stopLoading()
+        // 不碰 webView 字段：url 为空时 activate() 从没跑过，读它就是
+        // UninitializedPropertyAccessException —— 池子里的东西循环处理就够了
+        webViews.values.forEach { runCatching { it.stopLoading() } }
         webViews.values.forEach { runCatching { it.destroy() } }
         webViews.clear()
         super.onDestroy()
@@ -462,8 +467,15 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
      * 没有整页加载，也就没有重载。
      */
     private fun activate(url: String) {
-        val key = url.trimEnd('/')
-        if (key.isEmpty()) return
+        // ★ 空地址也要有 WebView —— 这里绝对不能 `if (key.isEmpty()) return`。
+        //
+        // 那个 early return 是我第一版写的，它引入了一个必崩：全新安装还没有地址时
+        // activate() 什么也不做，`webView` 这个 lateinit 就永远没被赋值，
+        // 而 Shell(webView = webView, ...) 会立刻读它 → 未初始化异常 → 闪退。
+        //
+        // 以前的 buildWebView() 是无条件跑的，所以永远有值。改成条件式之后
+        // 这个前提就没了 —— 用一张 about:blank 占位，前提就又成立了。
+        val key = url.trimEnd('/').ifEmpty { BLANK_PAGE }
         if (::webView.isInitialized) {
             // 先把当前这个停下 —— 不管新地址在不在池里。
             // 一开始这里加了个 `webViews[key] !== null` 的条件，那是错的：
@@ -546,7 +558,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             allowContentAccess = true          // 附件上传要读 content://
             // 不覆盖 UA：DSH 按视口宽度决定移动/桌面布局，手机平板各就各位
         }
-        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
+        CookieManager.getInstance().setAcceptThirdPartyCookies(v, true)
 
         v.webViewClient = object : WebViewClient() {
 
