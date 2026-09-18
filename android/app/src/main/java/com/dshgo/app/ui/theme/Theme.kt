@@ -22,7 +22,21 @@ import androidx.compose.ui.unit.sp
  */
 object DshColor {
     val Accent = Color(0xFF4D6BFE)
+    /**
+     * 强调色的「淡底」。
+     *
+     * ★ 这里原来是一个写死的浅紫（`#EBEFFF`），**没有深色版本** ——
+     * 深色主题下把它当背景、再用 `onSurface`（那是白色）写字，就是白底白字，
+     * 文字直接隐形。设置里的「连接」卡片和连接列表里的当前连接都中过这一枪。
+     *
+     * 改成带透明度的强调色：同一个色相，叠在什么底色上就得到什么明度，
+     * 明暗两套主题都自动成立，不用维护两份常量。
+     *
+     * 用 [softAccent] 而不是直接调这个 —— 那是个 @Composable，
+     * 在 Compose 里能跟着主题一起重组。
+     */
     val AccentSoft = Color(0xFFEBEFFF)
+
     val Running = Color(0xFF22C55E)
     val RunningSoft = Color(0xFFE7F8EE)
     val Warning = Color(0xFFF59E0B)
@@ -126,3 +140,11 @@ object DshSemantic {
     val runningSoft: Color @Composable get() = DshColor.RunningSoft
     val accent: Color @Composable get() = MaterialTheme.colorScheme.primary
 }
+
+/**
+ * 强调色的淡底 —— 用透明度算出来，明暗两套主题都对。
+ *
+ * @param alpha 叠加强度。默认 0.14 适合当卡片底；要更含蓄就用 0.08。
+ */
+@androidx.compose.runtime.Composable
+fun softAccent(alpha: Float = 0.14f): Color = DshColor.Accent.copy(alpha = alpha)

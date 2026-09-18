@@ -340,7 +340,14 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
 
         NotificationCenter.ensureChannels(this)
 
-        if (prefs.hasEntryUrl()) connect(null) else ui = ui.copy(screen = Screen.Setup)
+        // ★ 启动先进首页（连接列表），不自动连 —— 有多台电脑时，
+        //   自动连上某台再让你切走，不如先让你选。只有一条连接时也是一次点击。
+        if (ConnectionStore.all(this).isEmpty() && !prefs.hasEntryUrl()) {
+            ui = ui.copy(screen = Screen.Setup)
+        } else {
+            refreshConnections()
+            ui = ui.copy(screen = Screen.Connections)
+        }
         maybeHandleShare(intent)
         // 从通知点进来 / 冷启动时带过来的目标会话
         consumeOpenSession(intent)
@@ -571,6 +578,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
 
     /** @param url 来自连接页的输入；为 null 表示沿用已保存的地址。 */
     private fun connect(url: String?) {
+        // 连上就把这条地址收进列表 —— 别让首页空着（见 ConnectionStore.ensure）
+        url?.let { ConnectionStore.ensure(this, it) }
         if (url != null) {
             val normalized = Prefs.normalize(url)
             if (normalized.isEmpty()) {
@@ -1676,6 +1685,7 @@ private fun Shell(
                 onNotice = onOpenPanel,
                 onReload = onReload,
                 onSettings = onOpenSettings,
+                onHome = onOpenConnections,
                 onVoice = onVoice,
                 modifier = Modifier.align(Alignment.TopCenter),
             )

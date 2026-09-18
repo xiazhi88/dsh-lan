@@ -1,5 +1,7 @@
 package com.dshgo.app.ui
 
+import androidx.compose.ui.graphics.Color
+import com.dshgo.app.ui.theme.softAccent
 import com.dshgo.app.data.displayName
 import com.dshgo.app.data.ConnectionProbe
 import com.dshgo.app.data.Connection
@@ -485,7 +487,7 @@ fun SettingsSheet(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = onOpenConnections,
                 shape = RoundedCornerShape(14.dp),
-                color = DshColor.AccentSoft,
+                color = softAccent(),
             ) {
                 Row(
                     Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 13.dp),
@@ -1254,6 +1256,8 @@ fun DshStatusStrip(
     onNotice: () -> Unit,
     onReload: () -> Unit,
     onSettings: () -> Unit,
+    /** 回首页（连接列表）。 */
+    onHome: () -> Unit,
     /** 语音输入：说话 → 写进 DSH 的输入框。 */
     onVoice: () -> Unit,
     modifier: Modifier = Modifier,
@@ -1271,6 +1275,17 @@ fun DshStatusStrip(
                 .padding(start = 16.dp, end = 4.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // 回首页（连接列表）。放在最左 —— 它管的是「现在连着哪个」，
+            // 比通知 / 麦克风这些更靠外一层。
+            IconButton(onClick = onHome, modifier = Modifier.size(38.dp)) {
+                Icon(
+                    Icons.Rounded.ArrowBack,
+                    contentDescription = "返回连接列表",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(19.dp),
+                )
+            }
+
             // 绿 = 事件流通着；灰 = 断了（断了就收不到完成通知）
             Box(
                 Modifier
@@ -1610,7 +1625,7 @@ fun LockScreen(
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
-                        color = DshColor.AccentSoft,
+                        color = softAccent(),
                     ) {
                         Text(
                             "这台设备支持$deviceMethod。先输一次密码，之后就能直接用$deviceMethod 解锁，不用再输。",
@@ -1674,20 +1689,21 @@ fun LockScreen(
 }
 
 /**
- * 连接管理。
+ * 首页：选择要连接的电脑。
  *
- * ## 为什么列表里能显示状态、却不能显示「几个会话在跑」
+ * ## 为什么连接列表是首页，而不是藏在设置里
  *
- * 状态来自探测插件自己的两个端点（`/info` 和 `/auth/status`），**都不需要先解锁**
- * —— 所以列表里那些你从没登录过的 DSH 也能显示在线/离线、版本、要不要密码。
+ * 一个人可能有好几台跑 DSH 的机器，也可能同一个 DSH 在不同网络下地址不同
+ * （家里局域网、出门 Tailscale）。藏在设置里意味着每次换机器都要翻三层菜单。
+ * 摆在首页就是一屏之遥，而且每个状态一眼可见。
  *
- * 而「这台机器里有几个会话在跑」必须先登录它，列表里的连接你未必都存过密码。
- * 所以不显示 —— 而不是显示一个永远空着的「0 个会话」。
+ * ## 状态能给什么、不能给什么
  *
- * ## 为什么每条都要能改名
+ * 探针打插件自己的两个端点（`/info` 和 `/auth/status`），**都不需要先解锁** ——
+ * 所以从没登录过的 DSH 也能显示在线、延迟、版本、要不要密码。
  *
- * 同一个 DSH 在不同网络下地址不同（家里局域网、出门 Tailscale），
- * 光看 `192.168.0.91` 和 `100.101.102.103` 没人记得哪个是哪个。
+ * **「这台机器里有几个会话在跑」拿不到** —— 那要先登录它，而列表里的连接你
+ * 未必都存过密码。所以不显示，而不是放一个永远空着的「0 个会话」。
  */
 @Composable
 fun ConnectionsScreen(
@@ -1697,9 +1713,9 @@ fun ConnectionsScreen(
     probing: Boolean,
     onSwitch: (Connection) -> Unit,
     onProbeAll: () -> Unit,
-    onAdd: () -> Unit,
     onEdit: (Connection) -> Unit,
     onDelete: (Connection) -> Unit,
+    onAdd: () -> Unit,
     onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -1707,74 +1723,97 @@ fun ConnectionsScreen(
 
     Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Column(Modifier.fillMaxSize()) {
-            // 顶栏
+
+            // ── 品牌头 ────────────────────────────────────────────────
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .padding(start = 6.dp, end = 14.dp, top = 4.dp, bottom = 4.dp),
+                    .padding(start = 20.dp, end = 12.dp, top = 14.dp, bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                IconButton(onClick = onBack) {
-                    Icon(
-                        Icons.Rounded.ArrowBack,
-                        contentDescription = "返回",
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                Icon(
+                    painter = painterResource(R.drawable.ic_whale),
+                    contentDescription = null,
+                    tint = DshColor.Accent,
+                    modifier = Modifier.size(24.dp),
+                )
+                Spacer(Modifier.width(10.dp))
+                Column(Modifier.weight(1f)) {
+                    Text(
+                        "DSH Go",
+                        style = MaterialTheme.typography.titleMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Text(
+                        if (probing) "正在检查各台电脑…" else "选择要连接的电脑",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
-                Text(
-                    "连接",
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f),
-                )
-                TextButton(onClick = onProbeAll, enabled = !probing) {
-                    Text(if (probing) "探测中…" else "刷新", style = MaterialTheme.typography.labelMedium)
+                // 用文字「+」而不是图标：项目的图标集里没有 Add，
+                // 为一个加号引入整套 extended icons 不划算。
+                Surface(
+                    onClick = onAdd,
+                    shape = CircleShape,
+                    color = softAccent(0.16f),
+                    modifier = Modifier.size(36.dp),
+                ) {
+                    Box(contentAlignment = Alignment.Center) {
+                        Text(
+                            "+",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = DshColor.Accent,
+                        )
+                    }
                 }
             }
 
             Column(
                 Modifier
-                    .fillMaxSize()
+                    .weight(1f)
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp),
             ) {
+                Spacer(Modifier.height(8.dp))
+
                 if (connections.isEmpty()) {
-                    Spacer(Modifier.height(40.dp))
-                    Text(
-                        "还没有连接。加一个 —— 地址在电脑上的 DSH「设置 → 局域网访问」里。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Spacer(Modifier.height(16.dp))
+                    EmptyConnections()
+                } else {
+                    connections.forEach { conn ->
+                        ConnectionCard(
+                            conn = conn,
+                            status = statuses[conn.url],
+                            active = conn.id == activeId,
+                            probing = probing && statuses[conn.url] == null,
+                            onEnter = { onSwitch(conn) },
+                            onEdit = { editing = conn },
+                        )
+                        Spacer(Modifier.height(12.dp))
+                    }
                 }
 
-                connections.forEach { conn ->
-                    ConnectionRow(
-                        conn = conn,
-                        status = statuses[conn.url],
-                        active = conn.id == activeId,
-                        probing = probing && statuses[conn.url] == null,
-                        onSwitch = { onSwitch(conn) },
-                        onEdit = { editing = conn },
-                    )
-                    Spacer(Modifier.height(10.dp))
-                }
+                Spacer(Modifier.height(4.dp))
 
-                Spacer(Modifier.height(6.dp))
-                OutlinedButton(
-                    onClick = onAdd,
-                    modifier = Modifier.fillMaxWidth().height(46.dp),
-                    shape = RoundedCornerShape(14.dp),
+                // 刷新做成一整条，比右上角一个小图标好按得多
+                TextButton(
+                    onClick = onProbeAll,
+                    enabled = !probing,
+                    modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text("添加连接", style = MaterialTheme.typography.labelLarge)
+                    Text(
+                        if (probing) "检查中…" else "刷新状态",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = DshColor.Accent,
+                    )
                 }
 
-                Spacer(Modifier.height(12.dp))
+                Spacer(Modifier.height(10.dp))
                 Text(
                     "状态是探测出来的：插件在不在监听、版本多少、要不要密码。" +
-                        "「几个会话在跑」要看当前连着的那条 —— 其他连接没登录过，探不到。",
+                        "「几个会话在跑」只对当前连着的那条有效 —— 其他连接没登录过，探不到。",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 4.dp),
                 )
                 Spacer(Modifier.height(28.dp))
             }
@@ -1797,18 +1836,53 @@ fun ConnectionsScreen(
     }
 }
 
-/** 一条连接。整行可点 = 切过去；右边的小按钮 = 改名/改地址/删除。 */
+/** 一条连接都没存过时的引导。 */
 @Composable
-private fun ConnectionRow(
+private fun EmptyConnections() {
+    Surface(
+        Modifier.fillMaxWidth().padding(top = 40.dp),
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceVariant,
+    ) {
+        Column(Modifier.padding(20.dp)) {
+            Text(
+                "还没有连接",
+                style = MaterialTheme.typography.titleSmall,
+                color = MaterialTheme.colorScheme.onSurface,
+            )
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "地址在电脑上的 DSH「设置 → 局域网访问」里 —— 也可以扫那一页的二维码，" +
+                    "不用手敲 IP。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                lineHeight = 20.sp,
+            )
+        }
+    }
+}
+
+/**
+ * 一张连接卡片。
+ *
+ * ## 当前那条怎么强调
+ *
+ * **用边框，不用填充。** 一开始填充了浅色底，深色主题下白字涂上去直接隐形 ——
+ * 同一个坑设置里的「连接」卡片也踩过。边框 + 淡底（带透明度，不是写死的浅色）
+ * 在明暗两套主题下都稳。
+ */
+@Composable
+private fun ConnectionCard(
     conn: Connection,
     status: ConnectionProbe.Status?,
     active: Boolean,
     probing: Boolean,
-    onSwitch: () -> Unit,
+    onEnter: () -> Unit,
     onEdit: () -> Unit,
 ) {
+    val online = status?.online == true && status.listening
     val dot = when {
-        status == null -> DshColor.TextFaintLight
+        status == null -> MaterialTheme.colorScheme.onSurfaceVariant
         !status.online -> DshColor.Danger
         !status.listening -> DshColor.Warning
         else -> DshColor.Running
@@ -1816,74 +1890,96 @@ private fun ConnectionRow(
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        onClick = onSwitch,
-        shape = RoundedCornerShape(14.dp),
-        color = if (active) DshColor.AccentSoft else MaterialTheme.colorScheme.surfaceVariant,
-        border = if (active) {
-            androidx.compose.foundation.BorderStroke(1.dp, DshColor.Accent.copy(alpha = 0.4f))
-        } else {
-            null
-        },
+        onClick = onEnter,
+        shape = RoundedCornerShape(18.dp),
+        color = if (active) softAccent(0.10f) else MaterialTheme.colorScheme.surfaceVariant,
+        border = androidx.compose.foundation.BorderStroke(
+            width = if (active) 1.5.dp else 1.dp,
+            color = if (active) DshColor.Accent.copy(alpha = 0.55f) else DshColor.OutlineDark.copy(alpha = 0.35f),
+        ),
     ) {
-        Row(Modifier.padding(start = 14.dp, end = 6.dp, top = 12.dp, bottom = 12.dp)) {
-            Column(Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.size(8.dp).clip(CircleShape).background(dot))
+        Column(Modifier.padding(start = 16.dp, end = 8.dp, top = 15.dp, bottom = 15.dp)) {
+
+            // 名字行
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    Modifier
+                        .size(9.dp)
+                        .clip(CircleShape)
+                        .background(dot),
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    conn.displayName(),
+                    style = MaterialTheme.typography.titleSmall,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (active) {
                     Spacer(Modifier.width(8.dp))
-                    Text(
-                        conn.displayName(),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    if (active) {
-                        Spacer(Modifier.width(8.dp))
+                    Surface(
+                        shape = RoundedCornerShape(6.dp),
+                        color = DshColor.Accent,
+                    ) {
                         Text(
                             "当前",
                             style = MaterialTheme.typography.labelSmall,
-                            color = DshColor.Accent,
+                            color = Color.White,
+                            modifier = Modifier.padding(horizontal = 7.dp, vertical = 2.dp),
                         )
                     }
                 }
-                Spacer(Modifier.height(3.dp))
+                Spacer(Modifier.weight(1f))
+                IconButton(onClick = onEdit, modifier = Modifier.size(36.dp)) {
+                    Icon(
+                        Icons.Rounded.Settings,
+                        contentDescription = "编辑",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(17.dp),
+                    )
+                }
+            }
+
+            // 地址 —— 只在用户起过名字时才单独显示。
+            // 没起名时标题就是地址推出来的（displayName 的回退），再显示一遍是重复。
+            if (conn.name.isNotBlank()) {
                 Text(
-                    conn.url,
+                    conn.url.removePrefix("http://"),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                )
-                Spacer(Modifier.height(3.dp))
-                Text(
-                    when {
-                        probing -> "探测中…"
-                        status == null -> "未探测"
-                        !status.online -> status.error.ifEmpty { "离线" }
-                        !status.listening -> "插件在，但没在监听 —— 检查启动日志"
-                        else -> buildString {
-                            append(status.ms).append(" ms")
-                            if (status.version.isNotEmpty()) append(" · v").append(status.version)
-                            if (status.needsPassword) append(" · 需要密码")
-                            if (status.updateAvailable) append(" · 有新版")
-                        }
-                    },
-                    style = MaterialTheme.typography.labelSmall,
-                    color = if (status != null && !status.online) {
-                        DshColor.Danger
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    },
+                    modifier = Modifier.padding(start = 19.dp, top = 3.dp),
                 )
             }
-            IconButton(onClick = onEdit) {
-                Icon(
-                    Icons.Rounded.Settings,
-                    contentDescription = "编辑",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(18.dp),
-                )
-            }
+
+            // 状态
+            Spacer(Modifier.height(if (conn.name.isNotBlank()) 6.dp else 4.dp))
+            Text(
+                when {
+                    probing -> "检查中…"
+                    status == null -> "未检查"
+                    !status.online -> status.error.ifEmpty { "连不上" }
+                    !status.listening -> "插件在，但没在监听 —— 看电脑上的启动日志"
+                    else -> buildString {
+                        append(status.ms).append(" ms")
+                        if (status.version.isNotEmpty()) append(" · v").append(status.version)
+                        if (status.needsPassword) append(" · 需要解锁")
+                        if (status.updateAvailable) append(" · 插件有新版")
+                    }
+                },
+                style = MaterialTheme.typography.labelSmall,
+                color = when {
+                    status != null && !status.online -> DshColor.Danger
+                    status != null && !status.listening -> DshColor.Warning
+                    else -> MaterialTheme.colorScheme.onSurfaceVariant
+                },
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 19.dp),
+            )
         }
     }
 }
@@ -1941,9 +2037,11 @@ private fun EditConnectionDialog(
             }
         },
         dismissButton = {
+            // 两段式：第一次点变成「确认删除」，第二次才真删。
+            // 原来两个分支都写「删除」，等于没有确认这一步。
             TextButton(onClick = { if (confirmDelete) onDelete() else confirmDelete = true }) {
                 Text(
-                    if (confirmDelete) "删除" else "删除",
+                    if (confirmDelete) "确认删除" else "删除",
                     color = DshColor.Danger,
                 )
             }

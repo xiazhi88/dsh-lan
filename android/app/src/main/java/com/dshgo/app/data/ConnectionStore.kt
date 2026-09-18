@@ -44,15 +44,25 @@ object ConnectionStore {
 
     private const val KEY_LIST = "connections_v1"
     private const val KEY_ACTIVE = "active_connection_id"
-    private const val KEY_MIGRATED = "connections_migrated"
 
     // ------------------------------------------------------------------
     // 读
     // ------------------------------------------------------------------
 
-    /** 全部连接，最近用过的在前。 */
+    /**
+     * 全部连接，最近用过的在前。
+     *
+     * ★ 每次读取都会跟 `entry_url` **对一次账** —— 不在列表里就补进去。
+     *
+     * 原来的做法是"只迁移一次"（一个 migrated 标志），那是错的：
+     * 迁移跑的那天列表恰好是空的，这个状态就被永久固化了 ——
+     * 后来手敲地址连上的机器**再也不会进列表**，回到首页看到的是「还没有连接」。
+     * 实测才发现：代码看着对，跑一遍才暴露。
+     *
+     * 对账是幂等的、几乎不花钱，换来的是这种状态不会再卡死。
+     */
     fun all(ctx: Context): List<Connection> {
-        migrateIfNeeded(ctx)
+        reconcileEntryUrl(ctx)
         val raw = sp(ctx).getString(KEY_LIST, null) ?: return emptyList()
         val arr = runCatching { JSONArray(raw) }.getOrDefault(JSONArray())
         val out = ArrayList<Connection>(arr.length())
@@ -118,6 +128,27 @@ object ConnectionStore {
         setActive(ctx, id)
     }
 
+    /**
+     * 确保某个地址在列表里，并把它设为当前连接。返回那一条。
+     *
+     * ★ 为什么必须有这个：从设置页手敲地址连上时，只写了 entry_url ——
+     * 而迁移只在首次读取跑一次（那时列表还是空的），于是**后连的地址永远不进列表**，
+     * 回到首页看到的是「还没有连接」。这是实测才发现的：
+     * 代码看着完全对，跑一遍才发现列表里没有刚连的那台。
+     */
+    fun ensure(ctx: Context, url: String): Connection? {
+        if (url.isEmpty()) return null
+        val list = all(ctx)
+        val existing = list.firstOrNull { it.url == url }
+        if (existing != null) {
+            markUsed(ctx, existing.id)
+            return existing
+        }
+        val created = upsert(ctx, Connection(id = "", name = "", url = url))
+        setActive(ctx, created.id)
+        return created
+    }
+
     fun remove(ctx: Context, id: String) {
         val list = all(ctx).toMutableList()
         list.removeAll { it.id == id }
@@ -144,35 +175,59 @@ object ConnectionStore {
     }
 
     /**
-     * 把老版本的单地址 + 已知地址列表迁成连接列表。只跑一次。
+     * 让列表与「当前入口地址」（以及老版本的已知地址列表）保持一致。
      *
-     * 迁移完**不动** entry_url —— 它仍然是「当前入口地址」的唯一真源，
-     * 连接列表只是给它加了名字和别的选项。这样万一迁移出问题，退回旧版本也能用。
+     * 幂等：每次读取都跑，代价是两次 SharedPreferences 读，可以忽略。
+     * 好处是不会再出现「迁移那天列表是空的，于是永远空着」。
      */
-    private fun migrateIfNeeded(ctx: Context) {
+    private fun reconcileEntryUrl(ctx: Context) {
         val p = sp(ctx)
-        if (p.getBoolean(KEY_MIGRATED, false)) return
-        p.edit().putBoolean(KEY_MIGRATED, true).commit()
-
-        if (p.getString(KEY_LIST, null) != null) return   // 已经有列表了，别覆盖
-
         val prefs = Prefs(ctx)
         val current = prefs.entryUrl()
-        val known = prefs.knownUrls()
 
-        val urls = LinkedHashSet<String>()
-        if (current.isNotEmpty()) urls.add(current)
-        urls.addAll(known)
-        if (urls.isEmpty()) return
+        val raw = p.getString(KEY_LIST, null)
+        val arr = runCatching { JSONArray(raw ?: "[]") }.getOrDefault(JSONArray())
+        val known = LinkedHashSet<String>()
+        for (i in 0 until arr.length()) {
+            val u = arr.optJSONObject(i)?.optString("url").orEmpty()
+            if (u.isNotEmpty()) known.add(u)
+        }
+        known.addAll(prefs.knownUrls())
 
-        var activeId = ""
-        val list = urls.map { url ->
-            val c = Connection(id = deriveId(url), name = "", url = url)
-            if (url == current) activeId = c.id
-            c
+        val missing = known.filterNot { it.isEmpty() }
+            .filter { url -> (0 until arr.length()).none { arr.optJSONObject(it)?.optString("url") == url } }
+        val needCurrent = current.isNotEmpty() &&
+            (0 until arr.length()).none { arr.optJSONObject(it)?.optString("url") == current }
+
+        if (missing.isEmpty() && !needCurrent) return
+
+        // ★ 直接从 arr 里读，**不能调 all(ctx)** —— all() 会再调回这里，无限递归。
+        //   编译能过，跑起来栈溢出，所以宁可在这里多写几行。
+        val list = ArrayList<Connection>(arr.length() + missing.size)
+        for (i in 0 until arr.length()) {
+            val o = arr.optJSONObject(i) ?: continue
+            val u = o.optString("url")
+            if (u.isEmpty()) continue
+            list.add(
+                Connection(
+                    id = o.optString("id").ifEmpty { deriveId(u) },
+                    name = o.optString("name"),
+                    url = u,
+                    lastUsedAt = o.optLong("lastUsedAt", 0L),
+                ),
+            )
+        }
+        for (url in missing) {
+            if (list.none { it.url == url }) list.add(Connection(id = deriveId(url), name = "", url = url))
         }
         persist(ctx, list)
-        p.edit().putString(KEY_ACTIVE, activeId.ifEmpty { list.first().id }).commit()
+
+        // 当前连接还没定过（或指向已删除的）就补一个
+        val activeId = p.getString(KEY_ACTIVE, null).orEmpty()
+        if (activeId.isEmpty() || list.none { it.id == activeId }) {
+            val pick = list.firstOrNull { it.url == current }?.id ?: list.firstOrNull()?.id.orEmpty()
+            p.edit().putString(KEY_ACTIVE, pick).commit()
+        }
     }
 
     /** 从地址推一个稳定的 id。用户看不到它，只要同一地址每次都得到同一个即可。 */
