@@ -175,6 +175,9 @@ object SessionWatcher {
 
     /** 常驻通知显示的内容。running / approvals / notices 任一变化都会重算。 */
     val summary: StateFlow<Summary> get() = _summary
+    /** 会话 id → 标题。深链要用它去页面里定位那张卡片。 */
+    fun titleOf(sessionId: String): String = titles[sessionId].orEmpty()
+
     private val _summary = MutableStateFlow(Summary())
 
     /** App 是否在前台。MainActivity 的 onResume/onPause 维护。 */

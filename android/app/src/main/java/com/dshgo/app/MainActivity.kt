@@ -477,7 +477,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 // 从通知点进来的目标会话：页面刚就绪，正好写 localStorage
                 pendingSessionId?.let { pending ->
                     pendingSessionId = null
-                    view.evaluateJavascript(setCurrentSessionJs(pending), null)
+                    view.evaluateJavascript(setCurrentSessionJs(pending, sessionTitleOf(pending)), null)
                     prefs.setLastSessionId(pending)
                     return
                 }
@@ -727,7 +727,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         ui = ui.copy(panelOpen = false, screen = Screen.Dsh, dshReady = false, dshError = null)
         if (loaded) {
             // 页面已就绪：直接写 localStorage 再 reload
-            webView.evaluateJavascript(setCurrentSessionJs(sessionId), null)
+            webView.evaluateJavascript(setCurrentSessionJs(sessionId, sessionTitleOf(sessionId)), null)
             prefs.setLastSessionId(sessionId)   // 供「继续最近」用
         } else {
             // 冷启动还没载入 —— localStorage 要等 origin 就绪才写得进去
@@ -736,15 +736,83 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     }
 
     /**
-     * DSH 前端**没有 URL 路由**（实测无 pushState / URLSearchParams），
-     * 但它把当前会话持久化在 `localStorage['dsh.sessions.current']`。
-     * 写这个键再 reload 是唯一可靠的深链方式。
+     * 打开指定会话 —— **优先在页面里点它，而不是整页重载**。
+     *
+     * ## 为什么原来是重载
+     *
+     * DSH 前端没有 URL 路由（实测无 pushState / URLSearchParams），会话状态只活在
+     * 内存里，所以「写 `localStorage['dsh.sessions.current']` 再 `location.reload()`」
+     * 一度是唯一可靠的深链方式。代价是每次从通知/快捷方式进会话都要整页重载，
+     * 在已经常驻的情况下非常割裂。
+     *
+     * ## 现在改成点它
+     *
+     * 会话列表里的每一项是一张可点的卡片（`role="button"`、`cursor:pointer`），
+     * 它的 `aria-label` 是 `复制: <标题>`。**点它不会重载** —— 实测加载次数 1 → 1，
+     * 页面直接从新会话页切到了目标会话。
+     *
+     * 用 `aria-label` 而不是类名：DSH 的类名是带内容哈希的 CSS Modules
+     * （形如 `hHd-Xa_newSession`），每次构建都会变；无障碍标签才是稳定的契约。
+     *
+     * ## 找不到就回退
+     *
+     * 侧边栏可能没开、列表可能收在「展开其余 N 个会话」后面、标题可能对不上 ——
+     * 任何一步落空都回退到原来的 localStorage + reload。
+     * **所以这个改动不可能让行为变差**：要么更快，要么和以前一样。
      */
-    private fun setCurrentSessionJs(sessionId: String): String {
-        val q = org.json.JSONObject.quote(sessionId)
-        return "(function(){try{localStorage.setItem('dsh.sessions.current'," +
-            "JSON.stringify({sessionId:$q}));location.reload();}catch(e){}})();"
+    private fun setCurrentSessionJs(sessionId: String, title: String): String {
+        val id = org.json.JSONObject.quote(sessionId)
+        val t = org.json.JSONObject.quote(title)
+        val fallback = "try{localStorage.setItem('dsh.sessions.current'," +
+            "JSON.stringify({sessionId:$id}));}catch(e){}location.reload();"
+
+        if (title.isEmpty()) return "(function(){$fallback})();"
+
+        return """
+            (function(){
+              var want = $t;
+              function byCard(){
+                var all = document.querySelectorAll('[aria-label^="复制: "]');
+                var el = null;
+                for (var i = 0; i < all.length; i++) {
+                  var s = all[i].getAttribute('aria-label').slice(4);
+                  if (s === want) { el = all[i]; break; }
+                  if (!el && s.indexOf(want) === 0) el = all[i];
+                }
+                if (el) { el.click(); return true; }
+                return false;
+              }
+              function expand(){
+                var b = document.querySelectorAll('button');
+                for (var i = 0; i < b.length; i++) {
+                  var s = b[i].innerText || '';
+                  if (s.indexOf('展开其余') === 0) { b[i].click(); return true; }
+                }
+                return false;
+              }
+              try {
+                var toggle = document.querySelector('[aria-label="打开侧边栏"]');
+                if (toggle) toggle.click();
+                setTimeout(function(){
+                  if (byCard()) return;
+                  expand();
+                  setTimeout(function(){
+                    if (byCard()) return;
+                    $fallback
+                  }, 700);
+                }, 500);
+              } catch (e) { $fallback }
+            })();
+        """.trimIndent()
     }
+
+    /**
+     * 会话 id → 标题。查不到就返回空串（那会让深链直接走重载那条路）。
+     *
+     * 标题是「在页面里点它」的钥匙 —— 没有标题就没法定位那张卡片。
+     */
+    private fun sessionTitleOf(sessionId: String): String =
+        runCatching { SessionWatcher.titleOf(sessionId) }.getOrDefault("")
 
     private fun startWatching() {
         val url = prefs.entryUrl()
@@ -1448,7 +1516,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         pendingSessionId = last
         if (loaded) {
             pendingSessionId = null
-            webView.evaluateJavascript(setCurrentSessionJs(last), null)
+            webView.evaluateJavascript(setCurrentSessionJs(last, sessionTitleOf(last)), null)
             prefs.setLastSessionId(last)
         }
     }
