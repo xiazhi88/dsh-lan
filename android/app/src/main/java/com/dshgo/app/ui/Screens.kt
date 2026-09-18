@@ -1728,7 +1728,9 @@ fun ConnectionsScreen(
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .padding(start = 20.dp, end = 12.dp, top = 14.dp, bottom = 6.dp),
+                    // top 只留 4dp：上面已经有 statusBarsPadding() 给的系统 inset，
+                    // 再叠一层自己的内边距就是白留一条。
+                    .padding(start = 20.dp, end = 12.dp, top = 4.dp, bottom = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Icon(
