@@ -134,7 +134,41 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
 
 
     private lateinit var prefs: Prefs
+    /**
+     * **当前活跃**的 WebView。
+     *
+     * 名字没变、语义没变 —— 全文件几十处 `webView.xxx` 都不用动。
+     * 变的是它不再只有一个：池子里可以有多个，这个字段指向正在显示的那个。
+     */
     private lateinit var webView: WebView
+
+    /** 同时常驻几个 WebView。见 webViews 的说明。 */
+    private val MAX_LIVE_WEBVIEWS = 2
+
+    /**
+     * 常驻的 WebView，按入口地址存。最多 [MAX_LIVE_WEBVIEWS] 个。
+     *
+     * ## 为什么值得常驻
+     *
+     * 在两台电脑之间来回切时，重载一次要等整页加载；常驻之后切换只是换个可见性。
+     *
+     * ## 为什么只留两个
+     *
+     * 每个 WebView 里跑着一整个 DSH 页面，内存是实打实的。两个覆盖了
+     * 「两台机器来回切」这个最常见的场景，再多就是拿内存换一个不常发生的场景。
+     *
+     * ## 为什么不需要担心"两套通知"
+     *
+     * 审批接管在 SessionWatcher（App 侧的单例），不在 WebView 里 ——
+     * 它只跟当前入口地址走，所以多出来的 WebView 不会各推一条通知。
+     * 它们的页面里根本没有接管逻辑。
+     *
+     * 但仍要**停掉非活跃那个的 JS**：见 activate() 里的 onPause()。
+     */
+    private val webViews = LinkedHashMap<String, WebView>()
+
+    /** 装 WebView 的宿主。切换 = 换它里面的孩子，而不是重建。 */
+    private lateinit var webHost: android.widget.FrameLayout
 
     /** DSH 页面是否已经成功载入过一次（决定能不能往页面里注入 JS）。 */
     private var loaded = false
@@ -267,7 +301,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         )
         CookieManager.getInstance().setAcceptCookie(true)
 
-        buildWebView()
+        webHost = android.widget.FrameLayout(this)
+        activate(prefs.entryUrl())
         applyKeepAwake()
 
         setContent {
@@ -275,6 +310,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 Shell(
                     state = ui,
                     webView = webView,
+                    webHost = webHost,
                     onConnect = ::connect,
                     onReload = ::reloadDsh,
                     onBack = ::handleBack,
@@ -407,8 +443,10 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         runCatching { recognizer?.destroy() }
         recognizer = null
         clearLoadTimeout()
+        webViews.values.forEach { runCatching { it.onPause() } }
         webView.stopLoading()
-        webView.destroy()
+        webViews.values.forEach { runCatching { it.destroy() } }
+        webViews.clear()
         super.onDestroy()
     }
 
@@ -417,8 +455,75 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     // ------------------------------------------------------------------
 
     @SuppressLint("SetJavaScriptEnabled")
-    private fun buildWebView() {
-        webView = WebView(this).apply {
+    /**
+     * 让某个地址成为当前连接 —— 池子里有就直接用，没有就新建。
+     *
+     * 切换的全部代价就是换一次可见性（还有一次 onResume/onPause）。
+     * 没有整页加载，也就没有重载。
+     */
+    private fun activate(url: String) {
+        val key = url.trimEnd('/')
+        if (key.isEmpty()) return
+        if (::webView.isInitialized) {
+            // 先把当前这个停下 —— 不管新地址在不在池里。
+            // 一开始这里加了个 `webViews[key] !== null` 的条件，那是错的：
+            // 切到一个从没连过的地址时条件不成立，旧的那个就不会被暂停，
+            // 它的 JS 和事件流会一直跑在后台。
+            runCatching { webView.onPause() }
+        }
+        val target = webViewFor(key)
+        if (!::webView.isInitialized || target !== webView) {
+            webView = target
+            webHost.removeAllViews()
+            webHost.addView(
+                target,
+                android.widget.FrameLayout.LayoutParams(
+                    android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                    android.view.ViewGroup.LayoutParams.MATCH_PARENT,
+                ),
+            )
+        }
+        runCatching { target.onResume() }
+    }
+
+    /**
+     * 取这个地址的 WebView，没有就造一个。
+     *
+     * 超出上限时淘汰最久没用过的那个 —— 连同它的 Cookie 之外的运行状态一起销毁，
+     * 不然内存只增不减。
+     */
+    private fun webViewFor(url: String): WebView {
+        webViews.remove(url)?.let { hit ->
+            webViews[url] = hit          // 重新插入到末尾 = 标记为最近使用
+            return hit
+        }
+        val created = newWebView()
+        webViews[url] = created
+        while (webViews.size > MAX_LIVE_WEBVIEWS) {
+            val oldest = webViews.keys.firstOrNull() ?: break
+            if (oldest == url) break
+
+            // ★ 正在显示的那个绝不淘汰。
+            //
+            // 一开始这里写的是「先 remove，如果它是 webView 就 return@let 跳过后面的销毁」——
+            // 那是错的：它已经先从 map 里出去了，于是屏幕上还挂着它、池子里却没有了，
+            // 下次切回来会**新建一个**，而旧的那个既没人引用也没被销毁。
+            // 正确的做法是根本不把它移出去。
+            if (::webView.isInitialized && webViews[oldest] === webView) break
+
+            webViews.remove(oldest)?.let { dead ->
+                runCatching {
+                    dead.onPause()
+                    dead.stopLoading()
+                    dead.destroy()
+                }
+            }
+        }
+        return created
+    }
+
+    private fun newWebView(): WebView {
+        val v = WebView(this).apply {
             layoutParams = ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT,
@@ -427,7 +532,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         }
         WebView.setWebContentsDebuggingEnabled(true)
 
-        webView.settings.apply {
+        v.settings.apply {
             javaScriptEnabled = true
             domStorageEnabled = true
             databaseEnabled = true
@@ -443,7 +548,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         }
         CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true)
 
-        webView.webViewClient = object : WebViewClient() {
+        v.webViewClient = object : WebViewClient() {
 
             /**
              * 接管主文档，注入布局覆盖与 polyfill 兜底。
@@ -466,18 +571,22 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             }
 
             override fun onPageStarted(view: WebView, url: String, favicon: android.graphics.Bitmap?) {
+                if (view !== webView) return   // 非活跃的 WebView 不该改当前连接的状态
                 // 新的一次导航，先把上一次的失败清掉
                 if (ui.pageError != null) ui = ui.copy(pageError = null)
             }
 
             override fun onPageFinished(view: WebView, url: String) {
+                // ★ 池子里可能有两个 WebView。非活跃那个的加载结果不能覆盖当前连接的
+                //   loaded / pendingSessionId / pageError —— 否则切回去会看到别人的错误。
+                if (view !== webView) return
                 loaded = true
                 clearLoadTimeout()
 
                 // 从通知点进来的目标会话：页面刚就绪，正好写 localStorage
                 pendingSessionId?.let { pending ->
                     pendingSessionId = null
-                    view.evaluateJavascript(setCurrentSessionJs(pending, sessionTitleOf(pending)), null)
+                    view.evaluateJavascript(setCurrentSessionJs(pending), null)
                     prefs.setLastSessionId(pending)
                     return
                 }
@@ -496,6 +605,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 req: WebResourceRequest,
                 err: WebResourceError,
             ) {
+                if (view !== webView) return   // 同上：别把另一条连接的错误显示在这边
                 if (!req.isForMainFrame) return
                 clearLoadTimeout()
                 if (ui.screen == Screen.Dsh) {
@@ -512,6 +622,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 req: WebResourceRequest,
                 res: WebResourceResponse,
             ) {
+                if (view !== webView) return   // 同上：别把另一条连接的错误显示在这边
                 if (!req.isForMainFrame || res.statusCode < 400) return
                 clearLoadTimeout()
                 if (ui.screen == Screen.Dsh) {
@@ -528,7 +639,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             }
         }
 
-        webView.webChromeClient = object : WebChromeClient() {
+        v.webChromeClient = object : WebChromeClient() {
 
             override fun onShowFileChooser(
                 view: WebView,
@@ -571,6 +682,8 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 request.deny()
             }
         }
+
+        return v
     }
 
     // ------------------------------------------------------------------
@@ -587,8 +700,20 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 ui = ui.copy(setupError = "地址格式不对，例：http://192.168.1.100:3081")
                 return
             }
+            val changed = prefs.entryUrl() != normalized
             prefs.setEntryUrl(normalized)
             ui = ui.copy(entryUrl = prefs.entryUrl())
+
+            // ★ 换了地址就得让 SessionWatcher 跟上。
+            //
+            // 它是个单例、只跟一个 url（= prefs.entryUrl()）。切到另一台电脑后
+            // 如果不重开，它会继续盯着**旧那台** —— 通知和审批都会来自错的机器。
+            // 这是在加多连接常驻时才注意到的：切换以前只发生在设置页改地址，
+            // 现在首页点一下就能切，这个漏洞就露出来了。
+            if (changed && prefs.notifyEnabled()) {
+                SessionWatcher.stop()
+                startWatching()
+            }
         }
 
         val entry = prefs.entryUrl()
@@ -727,7 +852,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         ui = ui.copy(panelOpen = false, screen = Screen.Dsh, dshReady = false, dshError = null)
         if (loaded) {
             // 页面已就绪：直接写 localStorage 再 reload
-            webView.evaluateJavascript(setCurrentSessionJs(sessionId, sessionTitleOf(sessionId)), null)
+            webView.evaluateJavascript(setCurrentSessionJs(sessionId), null)
             prefs.setLastSessionId(sessionId)   // 供「继续最近」用
         } else {
             // 冷启动还没载入 —— localStorage 要等 origin 就绪才写得进去
@@ -736,83 +861,30 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     }
 
     /**
-     * 打开指定会话 —— **优先在页面里点它，而不是整页重载**。
+     * 打开指定会话。
      *
-     * ## 为什么原来是重载
+     * ## 为什么是「写 localStorage + 整页重载」
      *
-     * DSH 前端没有 URL 路由（实测无 pushState / URLSearchParams），会话状态只活在
-     * 内存里，所以「写 `localStorage['dsh.sessions.current']` 再 `location.reload()`」
-     * 一度是唯一可靠的深链方式。代价是每次从通知/快捷方式进会话都要整页重载，
-     * 在已经常驻的情况下非常割裂。
+     * DSH 前端**没有 URL 路由**（实测无 pushState / URLSearchParams），会话状态
+     * 只活在内存里，所以这是唯一可靠的深链方式。
      *
-     * ## 现在改成点它
+     * ## 试过「在页面里点那张卡片」，放弃了
      *
-     * 会话列表里的每一项是一张可点的卡片（`role="button"`、`cursor:pointer`），
-     * 它的 `aria-label` 是 `复制: <标题>`。**点它不会重载** —— 实测加载次数 1 → 1，
-     * 页面直接从新会话页切到了目标会话。
+     * 机制本身成立 —— 实测点一张已渲染的卡片，加载次数 1 → 1，不重载。
+     * 但**卡片的渲染时机拿不到**：会话列表是虚拟滚动的，卡片只有在滚到可见位置时
+     * 才会进 DOM —— 实测展开 47 个会话后 DOM 里也只有 0～1 张。于是按标题找卡片
+     * 基本必然落空。
      *
-     * 用 `aria-label` 而不是类名：DSH 的类名是带内容哈希的 CSS Modules
-     * （形如 `hHd-Xa_newSession`），每次构建都会变；无障碍标签才是稳定的契约。
+     * 落空之后只能回退到重载，而回退前那段等待（1.2 秒）**比原来的直接重载还慢**。
+     * 一个大部分时候不生效、生效时也谈不上快的优化，不如不做。
      *
-     * ## 找不到就回退
-     *
-     * 侧边栏可能没开、列表可能收在「展开其余 N 个会话」后面、标题可能对不上 ——
-     * 任何一步落空都回退到原来的 localStorage + reload。
-     * **所以这个改动不可能让行为变差**：要么更快，要么和以前一样。
+     * 保留这个判断的代价是每次进会话多等一秒多，收益却不稳定 —— 所以退回原样。
      */
-    private fun setCurrentSessionJs(sessionId: String, title: String): String {
-        val id = org.json.JSONObject.quote(sessionId)
-        val t = org.json.JSONObject.quote(title)
-        val fallback = "try{localStorage.setItem('dsh.sessions.current'," +
-            "JSON.stringify({sessionId:$id}));}catch(e){}location.reload();"
-
-        if (title.isEmpty()) return "(function(){$fallback})();"
-
-        return """
-            (function(){
-              var want = $t;
-              function byCard(){
-                var all = document.querySelectorAll('[aria-label^="复制: "]');
-                var el = null;
-                for (var i = 0; i < all.length; i++) {
-                  var s = all[i].getAttribute('aria-label').slice(4);
-                  if (s === want) { el = all[i]; break; }
-                  if (!el && s.indexOf(want) === 0) el = all[i];
-                }
-                if (el) { el.click(); return true; }
-                return false;
-              }
-              function expand(){
-                var b = document.querySelectorAll('button');
-                for (var i = 0; i < b.length; i++) {
-                  var s = b[i].innerText || '';
-                  if (s.indexOf('展开其余') === 0) { b[i].click(); return true; }
-                }
-                return false;
-              }
-              try {
-                var toggle = document.querySelector('[aria-label="打开侧边栏"]');
-                if (toggle) toggle.click();
-                setTimeout(function(){
-                  if (byCard()) return;
-                  expand();
-                  setTimeout(function(){
-                    if (byCard()) return;
-                    $fallback
-                  }, 700);
-                }, 500);
-              } catch (e) { $fallback }
-            })();
-        """.trimIndent()
+    private fun setCurrentSessionJs(sessionId: String): String {
+        val q = org.json.JSONObject.quote(sessionId)
+        return "(function(){try{localStorage.setItem('dsh.sessions.current'," +
+            "JSON.stringify({sessionId:$q}));location.reload();}catch(e){}})();"
     }
-
-    /**
-     * 会话 id → 标题。查不到就返回空串（那会让深链直接走重载那条路）。
-     *
-     * 标题是「在页面里点它」的钥匙 —— 没有标题就没法定位那张卡片。
-     */
-    private fun sessionTitleOf(sessionId: String): String =
-        runCatching { SessionWatcher.titleOf(sessionId) }.getOrDefault("")
 
     private fun startWatching() {
         val url = prefs.entryUrl()
@@ -1284,7 +1356,13 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
     private fun loadDsh(entry: String) {
         ui = ui.copy(screen = Screen.Dsh, dshReady = false, dshError = null)
         startLoadTimeout()
-        webView.loadUrl(entry)
+        // ★ 先切到这条连接的 WebView。池子里有它就直接显示，不重载。
+        activate(entry)
+        if (webView.url == null || webView.url!!.isEmpty() || !webView.url!!.startsWith("http")) {
+            webView.loadUrl(entry)     // 新造的那个还没载过
+        } else if (prefs.entryUrl() != entry) {
+            webView.loadUrl(entry)
+        }
     }
 
     /**
@@ -1516,7 +1594,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         pendingSessionId = last
         if (loaded) {
             pendingSessionId = null
-            webView.evaluateJavascript(setCurrentSessionJs(last, sessionTitleOf(last)), null)
+            webView.evaluateJavascript(setCurrentSessionJs(last), null)
             prefs.setLastSessionId(last)
         }
     }
@@ -1605,6 +1683,14 @@ data class ShellState(
 private fun Shell(
     state: ShellState,
     webView: WebView,
+    /**
+     * 装 WebView 的宿主容器。
+     *
+     * AndroidView 必须挂它、而不是 `webView` 字段本身：Compose 的 factory 只跑一次，
+     * 字段后来指向了别的 WebView 它也不知道 —— 那样常驻池建了也不会真的换过去。
+     * 挂一个稳定的 FrameLayout，由 MainActivity.activate() 换里面的孩子。
+     */
+    webHost: android.widget.FrameLayout,
     onConnect: (String?) -> Unit,
     onReload: () -> Unit,
     onBack: () -> Unit,
@@ -1673,7 +1759,11 @@ private fun Shell(
     Box(Modifier.fillMaxSize()) {
         // DSH 界面（常驻）。顶部让出原生状态条的高度。
         AndroidView(
-            factory = { webView },
+            // ★ 挂**宿主容器**而不是 webView 字段本身。
+            //   Compose 的 factory 只跑一次，字段后来指向了别的 WebView 它也不知道 ——
+            //   那样池子建了也不会真的换过去。挂一个稳定的 FrameLayout，
+            //   由 activate() 去换它里面的孩子。
+            factory = { webHost },
             modifier = Modifier
                 .fillMaxSize()
                 .then(if (showStrip) Modifier.padding(top = stripTotal) else Modifier)
