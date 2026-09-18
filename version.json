@@ -1,6 +1,6 @@
 {
-  "version": "4.2.3",
-  "apk": "https://cdn.jsdelivr.net/gh/xiazhi88/dshgo@dist-v4.2.3/dshgo-app.apk",
+  "version": "4.3.0",
+  "apk": "https://cdn.jsdelivr.net/gh/xiazhi88/dshgo@dist-v4.3.0/dshgo-app.apk",
   "apkFallback": "https://github.com/xiazhi88/dshgo/releases/latest/download/dshgo-app.apk",
-  "notes": "\u66f4\u65b0\u68c0\u67e5\u6539\u7528 npm scoped \u8def\u5f84"
+  "notes": "\u591a\u8fde\u63a5\u7ba1\u7406\uff1a\u5217\u8868\u3001\u72b6\u6001\u63a2\u6d4b\u3001\u968f\u65f6\u5207\u6362"
 }
