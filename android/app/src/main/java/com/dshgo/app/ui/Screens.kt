@@ -336,6 +336,24 @@ private fun Color8(v: Int) = androidx.compose.ui.graphics.Color(0xFF000000.toInt
 // 设置
 // ---------------------------------------------------------------------------
 
+/**
+ * 设置面板里的分组标题。
+ *
+ * 面板里已经有连接、界面、安全、通知、关于五类东西，全都长得一样、
+ * 靠 20dp 的间距分开 —— 扫一眼看不出层次。给每一类一个标题，
+ * 比再加几个分割线有用。
+ */
+@Composable
+private fun SettingsGroupTitle(text: String) {
+    Text(
+        text,
+        style = MaterialTheme.typography.labelMedium,
+        color = DshColor.Accent,
+        fontWeight = FontWeight.SemiBold,
+        modifier = Modifier.padding(start = 4.dp, bottom = 2.dp),
+    )
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsSheet(
@@ -415,6 +433,9 @@ fun SettingsSheet(
                 color = MaterialTheme.colorScheme.onSurface,
             )
             Spacer(Modifier.height(20.dp))
+
+            SettingsGroupTitle("连接")
+            Spacer(Modifier.height(8.dp))
 
             // 入口地址
             Text(
@@ -512,6 +533,9 @@ fun SettingsSheet(
 
             Spacer(Modifier.height(20.dp))
 
+            SettingsGroupTitle("安全")
+            Spacer(Modifier.height(8.dp))
+
             // 解锁方式
             //
             // 放在这里而不是塞进通知那块：它和"怎么进这个 App"有关，
@@ -578,6 +602,9 @@ fun SettingsSheet(
             }
 
             Spacer(Modifier.height(20.dp))
+
+            SettingsGroupTitle("界面")
+            Spacer(Modifier.height(8.dp))
 
             // 界面缩放
             Row(
@@ -663,153 +690,11 @@ fun SettingsSheet(
 
             Spacer(Modifier.height(20.dp))
 
-            // 版本与更新
-            Surface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                color = MaterialTheme.colorScheme.surfaceVariant,
-            ) {
-                Column(Modifier.padding(14.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(
-                                "版本",
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurface,
-                            )
-                            Spacer(Modifier.height(2.dp))
-                            Text(
-                                if (updateChecking) "正在检查…" else "当前 $currentVersion",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        TextButton(
-                            onClick = onCheckUpdate,
-                            enabled = !updateChecking,
-                            contentPadding = PaddingValues(horizontal = 10.dp),
-                        ) {
-                            Text("检查更新", style = MaterialTheme.typography.labelMedium)
-                        }
-                    }
-
-                    // 有新版本才占地方 —— 没查到（网络不通）时什么都不说，
-                    // 检查更新失败不该打扰用户。
-                    if (updateNewer && updateLatest != null) {
-                        Spacer(Modifier.height(10.dp))
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            modifier = Modifier.fillMaxWidth(),
-                        ) {
-                            Text(
-                                if (updatePhase == "ready") "已下载，等待安装" else "有新版本 $updateLatest",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.weight(1f),
-                            )
-                            OutlinedButton(
-                                onClick = onInstall,
-                                enabled = updatePhase != "downloading",
-                                shape = RoundedCornerShape(12.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp),
-                            ) {
-                                Text(
-                                    when (updatePhase) {
-                                        "downloading" -> "下载中"
-                                        "ready" -> "去安装"
-                                        "failed" -> "重试"
-                                        else -> "下载并安装"
-                                    },
-                                    style = MaterialTheme.typography.labelMedium,
-                                )
-                            }
-                        }
-
-                        // 进度条。总长未知时（服务端没给 Content-Length）用不确定态 ——
-                        // 硬凑一个百分比反而是在骗人。
-                        if (updatePhase == "downloading") {
-                            Spacer(Modifier.height(8.dp))
-                            val pct = if (updateTotal > 0) {
-                                ((updateBytes * 100) / updateTotal).toInt().coerceIn(0, 100)
-                            } else {
-                                null
-                            }
-                            if (pct == null) {
-                                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                            } else {
-                                LinearProgressIndicator(
-                                    progress = { pct / 100f },
-                                    modifier = Modifier.fillMaxWidth(),
-                                )
-                            }
-                            Spacer(Modifier.height(4.dp))
-                            Text(
-                                buildString {
-                                    append(fmtSize(updateBytes))
-                                    if (updateTotal > 0) append(" / ").append(fmtSize(updateTotal))
-                                    if (pct != null) append("　").append(pct).append("%")
-                                },
-                                style = MaterialTheme.typography.labelSmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-
-                        updateError?.let { err ->
-                            Spacer(Modifier.height(6.dp))
-                            Text(
-                                "下载失败：$err",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = DshColor.Danger,
-                            )
-                        }
-
-                        // 应用内下载只是方便，不是唯一的路 —— 装不上时还得能手工兜底
-                        TextButton(
-                            onClick = { onDownload(UpdateCheck.APK_URL) },
-                            contentPadding = PaddingValues(horizontal = 6.dp),
-                        ) {
-                            Text("改用浏览器下载", style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-
-                    TextButton(
-                        onClick = onPinWidget,
-                        contentPadding = PaddingValues(horizontal = 6.dp),
-                    ) {
-                        Text("把小组件放到桌面", style = MaterialTheme.typography.labelSmall)
-                    }
-
-                    if (!updateChecking && updateLatest != null && !updateNewer) {
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            "已是最新版本（$updateLatest）",
-                            style = MaterialTheme.typography.labelSmall,
-                            color = DshColor.Running,
-                        )
-                        // 查得到版本、但你知道有更新的情况确实会存在：镜像有索引延迟，
-                        // GitHub 国内又可能不通。所以给一条永远可用的手工路，
-                        // 而不是让用户对着"已是最新"干瞪眼。
-                        TextButton(
-                            onClick = { onDownload("") },
-                            contentPadding = PaddingValues(horizontal = 6.dp),
-                        ) {
-                            Text("手动下载最新版", style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-
-                    if (updateChecking || updateLatest == null) {
-                        // 一路都没查到 —— 那就别装"已是最新"，直接给手工入口
-                        TextButton(
-                            onClick = { onDownload("") },
-                            contentPadding = PaddingValues(horizontal = 6.dp),
-                        ) {
-                            Text("直接打开下载页", style = MaterialTheme.typography.labelSmall)
-                        }
-                    }
-                }
-            }
 
             // 通知
+            SettingsGroupTitle("通知")
+            Spacer(Modifier.height(8.dp))
+
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
@@ -968,6 +853,156 @@ fun SettingsSheet(
             }
 
             Spacer(Modifier.height(22.dp))
+
+            SettingsGroupTitle("关于")
+            Spacer(Modifier.height(8.dp))
+
+            // 版本与更新
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                color = MaterialTheme.colorScheme.surfaceVariant,
+            ) {
+                Column(Modifier.padding(14.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "版本",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurface,
+                            )
+                            Spacer(Modifier.height(2.dp))
+                            Text(
+                                if (updateChecking) "正在检查…" else "当前 $currentVersion",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                        TextButton(
+                            onClick = onCheckUpdate,
+                            enabled = !updateChecking,
+                            contentPadding = PaddingValues(horizontal = 10.dp),
+                        ) {
+                            Text("检查更新", style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+
+                    // 有新版本才占地方 —— 没查到（网络不通）时什么都不说，
+                    // 检查更新失败不该打扰用户。
+                    if (updateNewer && updateLatest != null) {
+                        Spacer(Modifier.height(10.dp))
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.fillMaxWidth(),
+                        ) {
+                            Text(
+                                if (updatePhase == "ready") "已下载，等待安装" else "有新版本 $updateLatest",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier.weight(1f),
+                            )
+                            OutlinedButton(
+                                onClick = onInstall,
+                                enabled = updatePhase != "downloading",
+                                shape = RoundedCornerShape(12.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp),
+                            ) {
+                                Text(
+                                    when (updatePhase) {
+                                        "downloading" -> "下载中"
+                                        "ready" -> "去安装"
+                                        "failed" -> "重试"
+                                        else -> "下载并安装"
+                                    },
+                                    style = MaterialTheme.typography.labelMedium,
+                                )
+                            }
+                        }
+
+                        // 进度条。总长未知时（服务端没给 Content-Length）用不确定态 ——
+                        // 硬凑一个百分比反而是在骗人。
+                        if (updatePhase == "downloading") {
+                            Spacer(Modifier.height(8.dp))
+                            val pct = if (updateTotal > 0) {
+                                ((updateBytes * 100) / updateTotal).toInt().coerceIn(0, 100)
+                            } else {
+                                null
+                            }
+                            if (pct == null) {
+                                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                            } else {
+                                LinearProgressIndicator(
+                                    progress = { pct / 100f },
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
+                            }
+                            Spacer(Modifier.height(4.dp))
+                            Text(
+                                buildString {
+                                    append(fmtSize(updateBytes))
+                                    if (updateTotal > 0) append(" / ").append(fmtSize(updateTotal))
+                                    if (pct != null) append("　").append(pct).append("%")
+                                },
+                                style = MaterialTheme.typography.labelSmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+
+                        updateError?.let { err ->
+                            Spacer(Modifier.height(6.dp))
+                            Text(
+                                "下载失败：$err",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = DshColor.Danger,
+                            )
+                        }
+
+                        // 应用内下载只是方便，不是唯一的路 —— 装不上时还得能手工兜底
+                        TextButton(
+                            onClick = { onDownload(UpdateCheck.APK_URL) },
+                            contentPadding = PaddingValues(horizontal = 6.dp),
+                        ) {
+                            Text("改用浏览器下载", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+
+                    TextButton(
+                        onClick = onPinWidget,
+                        contentPadding = PaddingValues(horizontal = 6.dp),
+                    ) {
+                        Text("把小组件放到桌面", style = MaterialTheme.typography.labelSmall)
+                    }
+
+                    if (!updateChecking && updateLatest != null && !updateNewer) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            "已是最新版本（$updateLatest）",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = DshColor.Running,
+                        )
+                        // 查得到版本、但你知道有更新的情况确实会存在：镜像有索引延迟，
+                        // GitHub 国内又可能不通。所以给一条永远可用的手工路，
+                        // 而不是让用户对着"已是最新"干瞪眼。
+                        TextButton(
+                            onClick = { onDownload("") },
+                            contentPadding = PaddingValues(horizontal = 6.dp),
+                        ) {
+                            Text("手动下载最新版", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+
+                    if (updateChecking || updateLatest == null) {
+                        // 一路都没查到 —— 那就别装"已是最新"，直接给手工入口
+                        TextButton(
+                            onClick = { onDownload("") },
+                            contentPadding = PaddingValues(horizontal = 6.dp),
+                        ) {
+                            Text("直接打开下载页", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+                }
+            }
+
             Text(
                 "DSH Go · 直连你自己的电脑 · 界面为 DSH 原生",
                 style = MaterialTheme.typography.labelSmall,
