@@ -1,5 +1,9 @@
 package com.dshgo.app
 
+import com.dshgo.app.ui.ConnectionsScreen
+import com.dshgo.app.data.ConnectionStore
+import com.dshgo.app.data.ConnectionProbe
+import com.dshgo.app.data.Connection
 import androidx.biometric.BiometricManager
 import com.dshgo.app.data.UnlockClient
 import com.dshgo.app.data.AppLock
@@ -296,6 +300,15 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     onUnlock = ::submitPassword,
                     onRetryUnlock = ::tryUnlock,
                     onLockMode = ::setLockMode,
+                    // ★ 必须同时关掉设置面板 —— 它是 ModalBottomSheet，
+                    //   只改 screen 的话连接页会开在它**后面**，用户看到的还是设置。
+                    onOpenConnections = { ui = ui.copy(screen = Screen.Connections, settingsOpen = false) },
+                    onOpenSetupForAdd = { ui = ui.copy(screen = Screen.Setup, setupError = null) },
+                    onBackToDsh = { ui = ui.copy(screen = Screen.Dsh) },
+                    onSwitchConn = ::switchTo,
+                    onProbeConn = ::refreshConnections,
+                    onSaveConn = ::saveConnection,
+                    onDeleteConn = ::deleteConnection,
                     lockModeState = ui.lockModeState,
                     lockDevice = ui.lockDevice,
                     updateLatest = ui.updateLatest,
@@ -340,6 +353,9 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         autoPickAddress()
         watchNetwork()
         maybeHandleShortcut(intent)
+
+        // 连接列表：首次读取会把老版本的单地址迁进来（见 ConnectionStore.migrateIfNeeded）
+        refreshConnections()
 
         // 解锁方式与设备能力各读一次（重组时不必反复查系统）
         ui = ui.copy(
@@ -1100,6 +1116,55 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         }
     }
 
+    /** 重新读连接列表并探测一遍。 */
+    private fun refreshConnections() {
+        val list = ConnectionStore.all(this)
+        ui = ui.copy(connections = list, activeConnId = ConnectionStore.activeId(this))
+        if (list.isEmpty()) return
+        ui = ui.copy(probing = true)
+        lifecycleScope.launch {
+            val statuses = runCatching { ConnectionProbe.probeAll(list) }.getOrDefault(emptyMap())
+            ui = ui.copy(connStatuses = statuses, probing = false)
+        }
+    }
+
+    /**
+     * 切到另一条连接。
+     *
+     * 就是改入口地址再走一遍握手 —— 换地址要重连这件事在 3.6.5 已经修过
+     * （事件流会把地址闭包捕获，不重开就一直连着旧的那台）。
+     */
+    private fun switchTo(conn: Connection) {
+        ConnectionStore.markUsed(this, conn.id)
+        prefs.setEntryUrl(conn.url)
+        prefs.rememberUrl(conn.url)
+        ui = ui.copy(activeConnId = conn.id)
+        connect(conn.url)
+    }
+
+    /** 保存新增或编辑后的连接；改的是当前那条就顺势重连。 */
+    private fun saveConnection(conn: Connection) {
+        val saved = ConnectionStore.upsert(this, conn)
+        if (saved.url == prefs.entryUrl()) {
+            // 地址被改了，当前这条得重连
+            switchTo(saved)
+        } else {
+            refreshConnections()
+        }
+    }
+
+    private fun deleteConnection(conn: Connection) {
+        ConnectionStore.remove(this, conn.id)
+        val wasActive = prefs.entryUrl() == conn.url
+        prefs.forgetUrl(conn.url)
+        if (wasActive) {
+            // 删掉的正是当前这条 —— 退到列表里剩下的一条
+            val next = ConnectionStore.active(this)
+            if (next != null) switchTo(next) else ui = ui.copy(screen = Screen.Setup)
+        }
+        refreshConnections()
+    }
+
     /** 换解锁方式。选「每次输密码」时 AppLock 会顺手清掉本机存的那份。 */
     private fun setLockMode(id: String) {
         AppLock.setMode(this, AppLock.Mode.from(id))
@@ -1441,6 +1506,12 @@ data class ShellState(
     /** 本机有没有存过密码 —— 决定下次能否直接用人脸/指纹。 */
     val lockHasStored: Boolean = false,
 
+    /** 连接列表与各自的探测状态。 */
+    val connections: List<Connection> = emptyList(),
+    val connStatuses: Map<String, ConnectionProbe.Status> = emptyMap(),
+    val probing: Boolean = false,
+    val activeConnId: String? = null,
+
     /** 应用内下载的状态：idle / downloading / ready / failed。 */
     val updatePhase: String = "idle",
     val updateBytes: Long = 0L,
@@ -1478,6 +1549,14 @@ private fun Shell(
     onRetryUnlock: () -> Unit,
     /** 更换解锁方式。 */
     onLockMode: (String) -> Unit,
+    onOpenConnections: () -> Unit,
+    onOpenSetupForAdd: () -> Unit,
+    /** 从连接管理回到 DSH 界面。 */
+    onBackToDsh: () -> Unit,
+    onSwitchConn: (Connection) -> Unit,
+    onProbeConn: () -> Unit,
+    onSaveConn: (Connection) -> Unit,
+    onDeleteConn: (Connection) -> Unit,
     updateLatest: String?,
     updateNewer: Boolean,
     updateChecking: Boolean,
@@ -1539,6 +1618,20 @@ private fun Shell(
                 onConnect = { onConnect(it) },
                 onScan = onScan,
                 onCancel = if (state.dshReady) onCancelSetup else null,
+            )
+
+            Screen.Connections -> ConnectionsScreen(
+                connections = state.connections,
+                statuses = state.connStatuses,
+                activeId = state.activeConnId,
+                probing = state.probing,
+                onSwitch = onSwitchConn,
+                onProbeAll = onProbeConn,
+                onAdd = onOpenSetupForAdd,
+                onEdit = onSaveConn,
+                onDelete = onDeleteConn,
+                onBack = onBackToDsh,
+                modifier = Modifier.padding(top = stripTotal),
             )
 
             Screen.Locked -> LockScreen(
@@ -1628,6 +1721,8 @@ private fun Shell(
                 onToggleAwake = onToggleAwake,
                 onClearSession = onClearSession,
                 onChangeUrl = onChangeUrl,
+                onOpenConnections = onOpenConnections,
+                connectionCount = state.connections.size,
                 updateLatest = updateLatest,
                 updateNewer = updateNewer,
                 updateChecking = updateChecking,

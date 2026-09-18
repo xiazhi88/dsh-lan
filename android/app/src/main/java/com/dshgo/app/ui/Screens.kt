@@ -1,5 +1,8 @@
 package com.dshgo.app.ui
 
+import com.dshgo.app.data.displayName
+import com.dshgo.app.data.ConnectionProbe
+import com.dshgo.app.data.Connection
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material3.LinearProgressIndicator
@@ -85,7 +88,7 @@ import kotlin.math.roundToInt
 
 /** 三个面：连接配置 / 握手等待 / DSH 界面本身（没有首页）。 */
 /** Locked = 宿主开了访问闸门，App 还没解锁。 */
-enum class Screen { Connecting, Setup, Dsh, Locked }
+enum class Screen { Connecting, Setup, Dsh, Locked, Connections }
 
 /** 顶部原生状态条的内容高度（不含状态栏）。 */
 val StripHeight = 44.dp
@@ -367,6 +370,10 @@ fun SettingsSheet(
     /** 这台设备实际能用什么（给说明文字用）。 */
     lockDeviceMethod: String,
     onLockMode: (String) -> Unit,
+    /** 打开连接管理。 */
+    onOpenConnections: () -> Unit,
+    /** 已有几条连接（入口上显示数量）。 */
+    connectionCount: Int,
     /** 应用内下载/安装：idle / downloading / ready / failed。 */
     updatePhase: String,
     updateBytes: Long,
@@ -469,6 +476,34 @@ fun SettingsSheet(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+
+            Spacer(Modifier.height(20.dp))
+
+            // 连接管理入口。放在入口地址下面 —— 它管的就是那个地址。
+            Spacer(Modifier.height(14.dp))
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = onOpenConnections,
+                shape = RoundedCornerShape(14.dp),
+                color = DshColor.AccentSoft,
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 13.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        "连接",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.weight(1f),
+                    )
+                    Text(
+                        if (connectionCount > 1) "$connectionCount 个 · 切换" else "管理",
+                        style = MaterialTheme.typography.labelMedium,
+                        color = DshColor.Accent,
+                    )
+                }
+            }
 
             Spacer(Modifier.height(20.dp))
 
@@ -1636,4 +1671,282 @@ fun LockScreen(
             }
         }
     }
+}
+
+/**
+ * 连接管理。
+ *
+ * ## 为什么列表里能显示状态、却不能显示「几个会话在跑」
+ *
+ * 状态来自探测插件自己的两个端点（`/info` 和 `/auth/status`），**都不需要先解锁**
+ * —— 所以列表里那些你从没登录过的 DSH 也能显示在线/离线、版本、要不要密码。
+ *
+ * 而「这台机器里有几个会话在跑」必须先登录它，列表里的连接你未必都存过密码。
+ * 所以不显示 —— 而不是显示一个永远空着的「0 个会话」。
+ *
+ * ## 为什么每条都要能改名
+ *
+ * 同一个 DSH 在不同网络下地址不同（家里局域网、出门 Tailscale），
+ * 光看 `192.168.0.91` 和 `100.101.102.103` 没人记得哪个是哪个。
+ */
+@Composable
+fun ConnectionsScreen(
+    connections: List<Connection>,
+    statuses: Map<String, ConnectionProbe.Status>,
+    activeId: String?,
+    probing: Boolean,
+    onSwitch: (Connection) -> Unit,
+    onProbeAll: () -> Unit,
+    onAdd: () -> Unit,
+    onEdit: (Connection) -> Unit,
+    onDelete: (Connection) -> Unit,
+    onBack: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    var editing by remember { mutableStateOf<Connection?>(null) }
+
+    Surface(modifier = modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+        Column(Modifier.fillMaxSize()) {
+            // 顶栏
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(start = 6.dp, end = 14.dp, top = 4.dp, bottom = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(
+                        Icons.Rounded.ArrowBack,
+                        contentDescription = "返回",
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Text(
+                    "连接",
+                    style = MaterialTheme.typography.titleMedium,
+                    color = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = onProbeAll, enabled = !probing) {
+                    Text(if (probing) "探测中…" else "刷新", style = MaterialTheme.typography.labelMedium)
+                }
+            }
+
+            Column(
+                Modifier
+                    .fillMaxSize()
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 16.dp),
+            ) {
+                if (connections.isEmpty()) {
+                    Spacer(Modifier.height(40.dp))
+                    Text(
+                        "还没有连接。加一个 —— 地址在电脑上的 DSH「设置 → 局域网访问」里。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(16.dp))
+                }
+
+                connections.forEach { conn ->
+                    ConnectionRow(
+                        conn = conn,
+                        status = statuses[conn.url],
+                        active = conn.id == activeId,
+                        probing = probing && statuses[conn.url] == null,
+                        onSwitch = { onSwitch(conn) },
+                        onEdit = { editing = conn },
+                    )
+                    Spacer(Modifier.height(10.dp))
+                }
+
+                Spacer(Modifier.height(6.dp))
+                OutlinedButton(
+                    onClick = onAdd,
+                    modifier = Modifier.fillMaxWidth().height(46.dp),
+                    shape = RoundedCornerShape(14.dp),
+                ) {
+                    Text("添加连接", style = MaterialTheme.typography.labelLarge)
+                }
+
+                Spacer(Modifier.height(12.dp))
+                Text(
+                    "状态是探测出来的：插件在不在监听、版本多少、要不要密码。" +
+                        "「几个会话在跑」要看当前连着的那条 —— 其他连接没登录过，探不到。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(28.dp))
+            }
+        }
+    }
+
+    editing?.let { conn ->
+        EditConnectionDialog(
+            conn = conn,
+            onDismiss = { editing = null },
+            onSave = { name, url ->
+                onEdit(conn.copy(name = name, url = url))
+                editing = null
+            },
+            onDelete = {
+                onDelete(conn)
+                editing = null
+            },
+        )
+    }
+}
+
+/** 一条连接。整行可点 = 切过去；右边的小按钮 = 改名/改地址/删除。 */
+@Composable
+private fun ConnectionRow(
+    conn: Connection,
+    status: ConnectionProbe.Status?,
+    active: Boolean,
+    probing: Boolean,
+    onSwitch: () -> Unit,
+    onEdit: () -> Unit,
+) {
+    val dot = when {
+        status == null -> DshColor.TextFaintLight
+        !status.online -> DshColor.Danger
+        !status.listening -> DshColor.Warning
+        else -> DshColor.Running
+    }
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        onClick = onSwitch,
+        shape = RoundedCornerShape(14.dp),
+        color = if (active) DshColor.AccentSoft else MaterialTheme.colorScheme.surfaceVariant,
+        border = if (active) {
+            androidx.compose.foundation.BorderStroke(1.dp, DshColor.Accent.copy(alpha = 0.4f))
+        } else {
+            null
+        },
+    ) {
+        Row(Modifier.padding(start = 14.dp, end = 6.dp, top = 12.dp, bottom = 12.dp)) {
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.size(8.dp).clip(CircleShape).background(dot))
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        conn.displayName(),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    if (active) {
+                        Spacer(Modifier.width(8.dp))
+                        Text(
+                            "当前",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = DshColor.Accent,
+                        )
+                    }
+                }
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    conn.url,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+                Spacer(Modifier.height(3.dp))
+                Text(
+                    when {
+                        probing -> "探测中…"
+                        status == null -> "未探测"
+                        !status.online -> status.error.ifEmpty { "离线" }
+                        !status.listening -> "插件在，但没在监听 —— 检查启动日志"
+                        else -> buildString {
+                            append(status.ms).append(" ms")
+                            if (status.version.isNotEmpty()) append(" · v").append(status.version)
+                            if (status.needsPassword) append(" · 需要密码")
+                            if (status.updateAvailable) append(" · 有新版")
+                        }
+                    },
+                    style = MaterialTheme.typography.labelSmall,
+                    color = if (status != null && !status.online) {
+                        DshColor.Danger
+                    } else {
+                        MaterialTheme.colorScheme.onSurfaceVariant
+                    },
+                )
+            }
+            IconButton(onClick = onEdit) {
+                Icon(
+                    Icons.Rounded.Settings,
+                    contentDescription = "编辑",
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(18.dp),
+                )
+            }
+        }
+    }
+}
+
+/** 改名 / 改地址 / 删除。 */
+@Composable
+private fun EditConnectionDialog(
+    conn: Connection,
+    onDismiss: () -> Unit,
+    onSave: (String, String) -> Unit,
+    onDelete: () -> Unit,
+) {
+    var name by remember { mutableStateOf(conn.name) }
+    var url by remember { mutableStateOf(conn.url) }
+    var confirmDelete by remember { mutableStateOf(false) }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("编辑连接", style = MaterialTheme.typography.titleMedium) },
+        text = {
+            Column {
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("名字（可留空）") },
+                    placeholder = { Text(conn.url.removePrefix("http://")) },
+                    singleLine = true,
+                    shape = RoundedCornerShape(12.dp),
+                )
+                Spacer(Modifier.height(10.dp))
+                OutlinedTextField(
+                    value = url,
+                    onValueChange = { url = it },
+                    label = { Text("地址") },
+                    singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                    shape = RoundedCornerShape(12.dp),
+                )
+                if (confirmDelete) {
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        "再点一次「删除」确认。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = DshColor.Danger,
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(
+                onClick = { onSave(name.trim(), url.trim()) },
+                enabled = url.trim().isNotEmpty(),
+            ) {
+                Text("保存")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = { if (confirmDelete) onDelete() else confirmDelete = true }) {
+                Text(
+                    if (confirmDelete) "删除" else "删除",
+                    color = DshColor.Danger,
+                )
+            }
+        },
+    )
 }
