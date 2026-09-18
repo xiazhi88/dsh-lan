@@ -1,3 +1,6 @@
+# macOS 目录元数据 —— 不是项目内容，别进仓库
+.DS_Store
+
 # 与 dshgo 无关的本地文件，别误提交
 /install.sh
 /install.sh.sha256
