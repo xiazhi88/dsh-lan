@@ -1366,15 +1366,39 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
 
     /** 真正把页面载进来（原来直接写在 onHandshake 里的那段）。 */
     private fun loadDsh(entry: String) {
-        ui = ui.copy(screen = Screen.Dsh, dshReady = false, dshError = null)
-        startLoadTimeout()
-        // ★ 先切到这条连接的 WebView。池子里有它就直接显示，不重载。
+        // ★ 先切到这条连接的 WebView，再决定要不要导航。
+        //
+        // 把 activate() 提到最前面、并且**先判断复用再置 dshReady**，是因为这里踩过一个坑：
+        // 复用一个已经载好的 WebView 时我们**不发任何导航**（这正是「秒切」的实现方式），
+        // 但 dshReady 已经被置成 false 了 —— 而把它置回 true 的只有 onPageFinished，
+        // 没有导航就永远不会触发。
+        //
+        // 症状：切换后遮罩一直转，等到超时显示「界面加载超时」，用户点「重新加载」才成功
+        // （那条路真的会 loadUrl，于是 onPageFinished 来了）。
+        // 实测反馈：「切换后加载失败，要再次重新加载才会成功」—— 就是这个。
         activate(entry)
-        if (webView.url == null || webView.url!!.isEmpty() || !webView.url!!.startsWith("http")) {
-            webView.loadUrl(entry)     // 新造的那个还没载过
-        } else if (prefs.entryUrl() != entry) {
+
+        val alive = webView.url?.startsWith("http") == true
+        if (!alive || prefs.entryUrl() != entry) {
+            // 新造的、或者地址变了：真真正正导航一次
+            ui = ui.copy(screen = Screen.Dsh, dshReady = false, dshError = null)
+            startLoadTimeout()
             webView.loadUrl(entry)
+            return
         }
+
+        // 复用：页面已经在里面了，**直接进**。没有导航，也就不会有 onPageFinished，
+        // 所以这里得自己把它标成就绪 —— 否则遮罩会一直转到超时。
+        clearLoadTimeout()
+        loaded = true
+        ui = ui.copy(
+            screen = Screen.Dsh,
+            dshReady = true,
+            dshError = null,
+            pageError = null,
+        )
+        // 页面没重载，但缩放仍要跟当前设置对齐一次
+        webView.evaluateJavascript(scaleJs(prefs.scale()), null)
     }
 
     /**
