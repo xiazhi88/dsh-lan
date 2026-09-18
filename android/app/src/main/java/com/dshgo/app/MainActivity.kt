@@ -1,5 +1,6 @@
 package com.dshgo.app
 
+import androidx.compose.foundation.layout.statusBarsPadding
 import com.dshgo.app.ui.ConnectionsScreen
 import com.dshgo.app.data.ConnectionStore
 import com.dshgo.app.data.ConnectionProbe
@@ -1640,7 +1641,10 @@ private fun Shell(
                 onEdit = onSaveConn,
                 onDelete = onDeleteConn,
                 onBack = onBackToDsh,
-                modifier = Modifier.padding(top = stripTotal),
+                // ★ 只留状态栏的高度，**不要 stripTotal**。
+                //   stripTotal 里含状态条本身的高度，而这一页根本没有状态条 ——
+                //   结果顶部白留一条。首页要顶到状态栏下面。
+                modifier = Modifier.statusBarsPadding(),
             )
 
             Screen.Locked -> LockScreen(

@@ -1915,7 +1915,14 @@ private fun ConnectionCard(
                     color = MaterialTheme.colorScheme.onSurface,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
+                    // ★ weight(1f) 而不是 weight(1f, fill = false)。
+                    //
+                    // fill = false 时这个 Text 只占内容宽度，于是它和后面那个
+                    // Spacer(weight(1f)) **按内容宽度分剩余空间** —— 名字越长，
+                    // 右边那个齿轮越靠左，两张卡片的 ⚙ 就对不齐。
+                    // 让 Text 吃满剩余宽度、并把后面那个 Spacer 删掉，
+                    // 齿轮就永远贴右边。
+                    modifier = Modifier.weight(1f),
                 )
                 if (active) {
                     Spacer(Modifier.width(8.dp))
@@ -1931,7 +1938,6 @@ private fun ConnectionCard(
                         )
                     }
                 }
-                Spacer(Modifier.weight(1f))
                 IconButton(onClick = onEdit, modifier = Modifier.size(36.dp)) {
                     Icon(
                         Icons.Rounded.Settings,
